@@ -20,6 +20,7 @@ Grab a cup of coffee icon:coffee[], and let's get started!
 * It is a motherboard expansion bus standard introduced in 2003 to enable high-speed serial communication
 between the CPU and its peripheral components.
 
+
 image::images/Timeline of PCIe Interface.png[]
 
 === PCIe: Point-to-Point and Switched Architecture
@@ -100,6 +101,7 @@ we will be using qemu extensively to explore the PCIe hierarchy. so lets underst
 == PCIe using QEMU
 
 Keep in mind:
+
 * QEMU does not have a clear socket-device matching mechanism and allows any PCI/PCI Express device to be plugged into any PCI/PCI Express slot.
 * Avoid mixing hierarchies:
 ** PCI devices in PCIe slots may fail.
@@ -139,7 +141,8 @@ Place only the following kinds of devices directly on the Root Complex:
    -----------   ------------------   -------------------   --------------
 ```
 
-* Connect `minimal-pcie-nic` to `pcie-root-port`. Create root port at address `06.0` name it `rp2`. Use rp2 to connect the `minimal-pcie-nic`.
+* Connect `minimal-pcie-nic` to `pcie-root-port`. Create root port at address `06.0` name it `rp2`.
+Use rp2 to connect the `minimal-pcie-nic`.
 
 ```bash
 runqemu playground-arm64 nographic slirp \
