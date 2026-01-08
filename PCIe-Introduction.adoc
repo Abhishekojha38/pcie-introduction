@@ -32,16 +32,29 @@ PCIe replaces the shared bus with dedicated point-to-point links:
 * Communication is packet-based
 * Multiple devices can transmit simultaneously without contention
 
-
-PCIe bus device components:
-
-* Root Complex (RC):
-** A Root Complex denotes the device that connecte cpu and memory subsystem to PCI Express fabric. It may support
-multiple Root ports. Root complex in this example supports 3 Root ports. Each root port is connected to an endpoint device or switch which form a PCIe hierarchy.
-* PCIe Switch
-* Endpoint(EP)
-
 image::images/PCIe Overview.png[width=70%]
+
+=== PCIe bus device components
+
+* A `Root Complex` denotes the device that connecte cpu and memory subsystem to PCI Express fabric. It may support
+multiple Root ports. Root complex in this example supports 3 Root ports. Each root port is connected to an endpoint device or switch which form a PCIe hierarchy.
+
+* A `Host Bridge` `TBD`
+
+* A `Root Port` is a port on the Root Complex where another PCIe Endpoint (aka a physical ‘device’) or Switch (aka a ‘router’) can be connected to
+An RC will have as many root ports as it physically supports. That is, as many as can be connected to the CPU silicon. Some root ports on a CPU might be routed directly to a physical PCIe slot, while others might be routed to other types of slots like an NVMe slot. It might also be routed to another PCIe switching device, which can route packets to multiple ports and therefore multiple Endpoints at once.
+
+* A `PCI Express Switch` is a device that routes packets to multiple ports and therefore multiple Endpoints at once.
+
+* A `Endpoint(EP)` is a device that can be connected to a Root Port or Switch Port.
+
+* A `PCI Express Port(root port)` is a logical PCI-PCI Bridge structure.
+
+There are two types of PCI Express Port: 
+
+* The Root Port and the Switch Port.
+* The Root Port originates a PCI Express link from a PCI Express Root Complex and the Switch Port connects PCI Express links to internal logical PCI buses.
+* The Switch Port, which has its secondary bus representing the switch's internal routing logic, is called the switch's Upstream Port. The switch's Downstream Port is bridging from switch's internal routing bus to a bus representing the downstream PCI Express link from the PCI Express Switch.
 
 image::images/PCIe Overview 1.png[width=50%]
 
@@ -186,3 +199,4 @@ Bus 00
 * https://www.ti.com/lit/an/snla415/snla415.pdf?ts=1767492313842
 * https://blogs.oracle.com/linux/a-study-of-the-linux-kernel-pci-subsystem-with-qemu
 * https://github.com/qemu/qemu/blob/master/docs/pcie.txt
+*https://www.kernel.org/doc/Documentation/PCI/PCIEBUS-HOWTO.txt
