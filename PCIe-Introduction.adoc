@@ -75,6 +75,7 @@ Given picture shows 3 root ports:
 
 image::images/PCIe Topology.png[width=50%]
 
+
 [cols="1,3", options="header"]
 |===
 | Component | Description
@@ -92,14 +93,19 @@ Each Root Complex has a fixed number of Root Ports, which connect the CPU to dif
 | PCI-to-PCI Bridge
 | `PCI-to-PCI Bridge` is used to create secondary PCI buses. The secondary bus is typically created via a `pci-bridge`.
 
+|===
+
+image::images/PCIe Switch.png[width=50%]
+
+[cols="1,3", options="header"]
+|===
+| Component | Description
+
 | PCI Express Switch
 | `PCI Express Switch` is a device that routes packets to multiple ports and therefore multiple Endpoints at once.
 
 | Endpoint(EP)
 | `Endpoint(EP)` is a device that can be connected to a Root Port or Switch Port.
-
-| PCI Express Port(root port)
-| `PCI Express Port(root port)` is a logical PCI-PCI Bridge structure.
 
 |===
 
@@ -109,6 +115,8 @@ There are two types of PCI Express Port:
 * The Root Port and the Switch Port.
 * The Root Port originates a PCI Express link from a PCI Express Root Complex and the Switch Port connects PCI Express links to internal logical PCI buses.
 * The Switch Port, which has its secondary bus representing the switch's internal routing logic, is called the switch's Upstream Port. The switch's Downstream Port is bridging from switch's internal routing bus to a bus representing the downstream PCI Express link from the PCI Express Switch.
+
+=== PCI Express PHY Layer
 
 image::images/PCIe Overview 1.png[width=50%]
 
@@ -124,7 +132,7 @@ PCIe components connect via **Links** made of one or more **Lanes**, where each 
 image::images/PCIe Overview 2.png[width=50%]
 
 
-=== PCI Express PHY Layer
+=== PCI Components
 
 so when we are taking about PCIe we should also take about PCI bus device components:
 
