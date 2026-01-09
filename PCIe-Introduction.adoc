@@ -16,14 +16,25 @@ Grab a cup of coffee icon:coffee[], and let's get started!
 
 == What is PCIe?
 
-* PCIe stands for Peripheral Component Interconnect Express.
-* It is a motherboard expansion bus standard introduced in 2003 to enable high-speed serial communication
-between the CPU and its peripheral components.
-
+PCIe stands for Peripheral Component Interconnect Express. It is a motherboard expansion bus standard introduced in 2003 to enable high-speed serial communication between the CPU and its peripheral components.
 
 image::images/Timeline of PCIe Interface.png[]
 
-=== PCIe: Point-to-Point and Switched Architecture
+* PCI express design to replace PCI by making sure that PCIe software support backword compatibility.
+
+* PCIe Improvements:
+
+** PCIe uses serial bus technologies where as PCI is parallel bus so PCIe uses less IO pins which reduces the layout complexity thus reduce the board design cost.
+
+** Allows to increase the transmission frequency.
+
+----
+Gen1= data rate 2.5Gbps
+Gen2 = data rate 5Gbps
+Gen3 = data rate 8Gbps
+----
+
+** Allow to scale bandwidth by providing support for multiple lane and that will increase the throughput.1-32 lanes support
 
 PCIe replaces the shared bus with dedicated point-to-point links:
 
@@ -32,23 +43,66 @@ PCIe replaces the shared bus with dedicated point-to-point links:
 * Communication is packet-based
 * Multiple devices can transmit simultaneously without contention
 
+=== PCIe Topology
+
+* CPU will access the Root Complex to configure the Root complex IP.
+* CPU will also use Root complex in order to access the endpoint devices.
+* CPU receives the interrupts of all the endpoint devices via Root Complex, Interrupt section is covered later in the document
+* Root Complex can also access the memory without use CPU like DMA.
+* End point can access the Host memory directly using Root Complex. To access the memory host system makes end device bus master to give the permission to the endpoint device.
+* It also provide the address to which data can read or written.
+* PCIe uses point to point topology which means single serial link connect to PCIe device
+* Each bus also assigned with the bus number during the software configuration which help the ECAM to generate the bus address.
+* These bus numbers are used by switches or bridges etc to do the packet transection.
+* PCIe has its own address space, which can be 32-bit or 64-bit depending on the root complex.
+
+[NOTE]
+--
+PCI address space is visible to the Only PCIe components like Root complex, endpoints, Switches and bridges etc.
+--
+
 image::images/PCIe Overview.png[width=70%]
 
-=== PCIe bus device components
+=== PCIe Components
 
-* A `Root Complex` denotes the device that connecte cpu and memory subsystem to PCI Express fabric. It may support
-multiple Root ports. Root complex in this example supports 3 Root ports. Each root port is connected to an endpoint device or switch which form a PCIe hierarchy.
+As you can see in the picture available `root ports` are nothing but `virtual PCI to PCI bridges`. These bridges will be connected to bus 0 and these bridges will also create new busses to which other PCIe devices are connected.
 
-* A `Host Bridge` `TBD`
+Given picture shows 3 root ports:
 
-* A `Root Port` is a port on the Root Complex where another PCIe Endpoint (aka a physical ‘device’) or Switch (aka a ‘router’) can be connected to
-An RC will have as many root ports as it physically supports. That is, as many as can be connected to the CPU silicon. Some root ports on a CPU might be routed directly to a physical PCIe slot, while others might be routed to other types of slots like an NVMe slot. It might also be routed to another PCIe switching device, which can route packets to multiple ports and therefore multiple Endpoints at once.
+1. `Root Port 1` is connected to `PCIe to PCI-X bridge`.
+2. `Root Port 2` is connected to `PCIe switch`.
+3. `Root Port 3` is connected to `PCIe express endpoint`.
 
-* A `PCI Express Switch` is a device that routes packets to multiple ports and therefore multiple Endpoints at once.
+image::images/PCIe Topology.png[width=50%]
 
-* A `Endpoint(EP)` is a device that can be connected to a Root Port or Switch Port.
+[cols="1,3", options="header"]
+|===
+| Component | Description
 
-* A `PCI Express Port(root port)` is a logical PCI-PCI Bridge structure.
+| Root Complex
+| The `Root Complex` is the PCIe controller present in the SoC. It connects the CPU and memory subsystem to the PCI Express fabric and manages communication with PCIe endpoint devices. It may support multiple Root Ports. In this example, the Root Complex supports **3 Root Ports**, each connecting to an endpoint device or a PCIe switch, forming a PCIe hierarchy.
+
+| Host Bridge
+| The `Host Bridge` connects the CPU to the PCI Express fabric. It acts as the interface between the processor and the PCIe subsystem.
+
+| Root Port
+| `Root ports` are nothing but `virtual PCI to PCI bridges`. A `Root Port` is a port on the Root Complex to which a PCIe Endpoint (a physical device such as NVMe or NIC) or a PCIe Switch (used to fan out multiple devices) can be connected.
+Each Root Complex has a fixed number of Root Ports, which connect the CPU to different parts of the PCIe system.
+
+| PCI-to-PCI Bridge
+| `PCI-to-PCI Bridge` is used to create secondary PCI buses. The secondary bus is typically created via a `pci-bridge`.
+
+| PCI Express Switch
+| `PCI Express Switch` is a device that routes packets to multiple ports and therefore multiple Endpoints at once.
+
+| Endpoint(EP)
+| `Endpoint(EP)` is a device that can be connected to a Root Port or Switch Port.
+
+| PCI Express Port(root port)
+| `PCI Express Port(root port)` is a logical PCI-PCI Bridge structure.
+
+|===
+
 
 There are two types of PCI Express Port: 
 
