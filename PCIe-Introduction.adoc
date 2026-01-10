@@ -14,19 +14,19 @@ to avoid unnecessary complexity.
 
 Grab a cup of coffee icon:coffee[], and let's get started!
 
-== What is PCIe?
+== So, What Exactly is PCIe?
+
+Lets start with bookish definition:
 
 PCIe stands for Peripheral Component Interconnect Express. It is a motherboard expansion bus standard introduced in 2003 to enable high-speed serial communication between the CPU and its peripheral components.
 
 image::images/Timeline of PCIe Interface.png[]
 
-* PCI express design to replace PCI by making sure that PCIe software support backword compatibility.
+I am not going to cover the history of PCIe in this document. 
 
-* PCIe Improvements:
+* PCIe was brought to replace PCI with followig improvements. PCIe uses serial bus technologies where as PCI is parallel bus so PCIe uses less IO pins which reduces the layout complexity thus reduce the board design cost.
 
-** PCIe uses serial bus technologies where as PCI is parallel bus so PCIe uses less IO pins which reduces the layout complexity thus reduce the board design cost.
-
-** Allows to increase the transmission frequency.
+* Allows to increase the transmission frequency.
 
 ----
 Gen1= data rate 2.5Gbps
@@ -36,17 +36,19 @@ Gen3 = data rate 8Gbps
 
 ** Allow to scale bandwidth by providing support for multiple lane and that will increase the throughput.1-32 lanes support
 
-PCIe replaces the shared bus with dedicated point-to-point links:
+* PCIe replaces the shared bus with dedicated point-to-point links:
 
-* Each device connects through its own PCIe link
-* Links terminate at a Root Complex or a PCIe switch
-* Communication is packet-based
-* Multiple devices can transmit simultaneously without contention
+** Each device connects through its own PCIe link.
+** Links terminate at a Root Complex or a PCIe switch.
+** Communication is packet-based.
+** Multiple devices can transmit simultaneously without contention.
 
 === PCIe Topology
 
+This is how cpu rootcomplex and endpoint devices are communicate with each other.
+
 * CPU will access the Root Complex to configure the Root complex IP.
-* CPU will also use Root complex in order to access the endpoint devices.
+* Endpoint device will be accessed by CPU via Root Complex.
 * CPU receives the interrupts of all the endpoint devices via Root Complex, Interrupt section is covered later in the document
 * Root Complex can also access the memory without use CPU like DMA.
 * End point can access the Host memory directly using Root Complex. To access the memory host system makes end device bus master to give the permission to the endpoint device.
@@ -62,6 +64,12 @@ PCI address space is visible to the Only PCIe components like Root complex, endp
 --
 
 image::images/PCIe Overview.png[width=70%]
+
+There are two types of PCI Express Port: 
+
+* The Root Port and the Switch Port.
+* The Root Port originates a PCI Express link from a PCI Express Root Complex and the Switch Port connects PCI Express links to internal logical PCI buses.
+* The Switch Port, which has its secondary bus representing the switch's internal routing logic, is called the switch's Upstream Port. The switch's Downstream Port is bridging from switch's internal routing bus to a bus representing the downstream PCI Express link from the PCI Express Switch.
 
 === PCIe Components
 
@@ -109,13 +117,6 @@ image::images/PCIe Switch.png[width=50%]
 
 |===
 
-
-There are two types of PCI Express Port: 
-
-* The Root Port and the Switch Port.
-* The Root Port originates a PCI Express link from a PCI Express Root Complex and the Switch Port connects PCI Express links to internal logical PCI buses.
-* The Switch Port, which has its secondary bus representing the switch's internal routing logic, is called the switch's Upstream Port. The switch's Downstream Port is bridging from switch's internal routing bus to a bus representing the downstream PCI Express link from the PCI Express Switch.
-
 === PCI Express PHY Layer
 
 image::images/PCIe Overview 1.png[width=50%]
@@ -131,24 +132,6 @@ PCIe components connect via **Links** made of one or more **Lanes**, where each 
 
 image::images/PCIe Overview 2.png[width=50%]
 
-
-=== PCI Components
-
-so when we are taking about PCIe we should also take about PCI bus device components:
-
-* Host bridge
-* PCI bridge
-* PCI device
-
-=== Packet-Based Communication
-
-Data in PCIe is transmitted as packets called *Transaction Layer Packets (TLPs)*.
-
-* TLPs include routing information
-* PCIe switches inspect packet headers
-* Packets are forwarded to the correct output port
-* Traffic traverses multiple point-to-point links if necessary
-
 === What changed from PCI to PCIe?
 
 The biggest shift from legacy PCI to PCIe was how devices are connected and communicate.
@@ -156,7 +139,7 @@ The biggest shift from legacy PCI to PCIe was how devices are connected and comm
 * Legacy PCI used a shared bus.
 * PCIe uses point-to-point links.
 
-=== Legacy PCI: Shared Bus Model
+== Legacy PCI: Shared Bus Model
 
 In legacy PCI systems:
 
@@ -167,21 +150,37 @@ In legacy PCI systems:
 
 image::images/Legacy PCI Overview.png[width=50%]
 
+=== PCI Components
+
+so when we are taking about PCIe we should also take about PCI bus device components:
+
+* Host bridge
+* PCI bridge
+* PCI device
 
 [NOTE]
 --
 we will be using qemu extensively to explore the PCIe hierarchy. so lets understand how pcie topology is created in qemu.
 --
 
-== PCIe using QEMU
+== Exploring PCIe with QEMU
 
-Keep in mind:
+We will cover two usecases here:
+
+1. Connect minimal-pcie-nic to pcie-root-port(pci bridge connected to bus 0).
+2. Connect PCIe switch to pcie-root-port(pci bridge connected to bus 0) and then connect minimal-pcie-nic to downstream ports of switch.
+
+these two senario will help us understand how PCIe topology is created in qemu ad we will be using it in further discussions.
+
+Some of the key points to remember:
 
 * QEMU does not have a clear socket-device matching mechanism and allows any PCI/PCI Express device to be plugged into any PCI/PCI Express slot.
 * Avoid mixing hierarchies:
 ** PCI devices in PCIe slots may fail.
 ** PCIe devices in PCI slots lose access to the Extended Configuration Space.
 * **Best Practice:** Connect PCIe devices only to PCIe Root Ports or Downstream Ports.
+
+We need to understand the Root Bus (pcie.0) to understand how PCIe topology is created in qemu.
 
 === Root Bus (pcie.0)
 
@@ -216,10 +215,13 @@ Place only the following kinds of devices directly on the Root Complex:
    -----------   ------------------   -------------------   --------------
 ```
 
+=== Connect minimal-pcie-nic to pcie-root-port(pci bridge connected to bus 0)
+
 * Connect `minimal-pcie-nic` to `pcie-root-port`. Create root port at address `06.0` name it `rp2`.
 Use rp2 to connect the `minimal-pcie-nic`.
 
 ```bash
+# Command to create root port and connect minimal-pcie-nic to it
 runqemu playground-arm64 nographic slirp \
         qemuparams="-m 512 \
         -machine virt \
@@ -250,7 +252,49 @@ Bus 00
            └─ 00.0 Device 10f1
 ```
     
-* `TBD`
+image::images/PCIe Root Port.png[width=100%]
+
+=== Connect PCIe switch to pcie-root-port(pci bridge connected to bus 0)and then connect minimal-pcie-nic to downstream ports of switch
+
+Here is the command to create `root port`, `upstream port` and `downstream ports` and connect minimal-pcie-nic to downstream ports of switch and connect upstream port to root port
+
+```bash
+runqemu playground-arm64 nographic slirp \
+  qemuparams=" \
+  -device pcie-root-port,id=rp2,bus=pcie.0,chassis=2,addr=0x6 \
+  -device x3130-upstream,id=sw_up,bus=rp2 \
+  -device xio3130-downstream,id=sw_dn1,bus=sw_up,chassis=3,addr=0x0 \
+  -device xio3130-downstream,id=sw_dn2,bus=sw_up,chassis=4,addr=0x1 \
+  -device minimal-pcie-nic,bus=sw_dn1 \
+  -device minimal-pcie-nic,bus=sw_dn2"
+```
+
+```bash
+root@playground-arm64:~# lspci -tv
+-[0000:00]-+-00.0  Red Hat, Inc. QEMU PCIe Host bridge
+           +-01.0  Red Hat, Inc. Virtio network device
+           +-02.0  Red Hat, Inc. Virtio RNG
+           +-03.0  Red Hat, Inc. Virtio block device
+           +-04.0  Red Hat, Inc. QEMU XHCI Host Controller
+           \-06.0-[01-04]----00.0-[02-04]--+-00.0-[03]----00.0  Red Hat, Inc. Device 10f1
+                                           \-01.0-[04]----00.0  Red Hat, Inc. Device 10f1
+
+# visual representation of the PCIe hierarchy
+-[0000:00]-+-00.0  QEMU PCIe Host bridge
+           +-01.0  Virtio network device
+           +-02.0  Virtio RNG
+           +-03.0  Virtio block device
+           +-04.0  QEMU XHCI Host Controller
+           \-06.0-[01-04]----00.0-[02-04]--+-00.0-[03]----00.0  Device 10f1
+                                           \-01.0-[04]----00.0  Device 10f1
+```
+
+image::images/QEMU PCIe Switch.png[width=100%]
+
+[IMPORTANT]
+--
+This is enough to get the idea about how bus device and functions are created in PCIe topology.
+--
 
 == Let’s Grab another Coffee and Explore the PCIe Hierarchy
 
