@@ -1,13 +1,15 @@
+:icons: font
+
 = Getting Started with PCIe (A Practical Beginner’s Guide)
 
-Hello! I’m writing this post to share the PCIe lessons I’ve picked up while working on real-world PCIe
-projects—things like chasing down LTSSM issues and building NIC drivers. I hope this guide helps you
+Hello! I’m writing this post to share the PCIe details I’ve picked up while working on real-world PCIe
+projects—things like chasing down LTSSM issues and writing NIC drivers. I hope this guide helps you
 understand the basics of PCIe and get started with your own PCIe projects.
 
 In this series, I aim to:
 
 .Do
-* Focus on software-side fundamentals to build a solid mental model for modern systems.
+* Focus on software-side fundamentals to build a solid mental PCIe model.
 * Provide practical examples of investigating PCIe hierarchies.
 * Keep it simple and easy to understand. Prioritize conceptual clarity over specification-perfect details
 to avoid unnecessary complexity.
@@ -16,32 +18,17 @@ Grab a cup of coffee icon:coffee[], and let's get started!
 
 == So, What Exactly is PCIe?
 
-Lets start with bookish definition:
+`PCIe` stands for `Peripheral Component Interconnect Express`. `PCIe` was brought to replace `PCI` with followig improvements. `PCIe` uses serial bus technologies where as `PCI` is parallel bus so `PCIe` uses less IO pins which reduces the layout complexity thus reduce the board design cost.
 
-PCIe stands for Peripheral Component Interconnect Express. It is a motherboard expansion bus standard introduced in 2003 to enable high-speed serial communication between the CPU and its peripheral components.
+image::images/Timeline of PCIe Interface.png[] 
 
-image::images/Timeline of PCIe Interface.png[]
-
-I am not going to cover the history of PCIe in this document. 
-
-* PCIe was brought to replace PCI with followig improvements. PCIe uses serial bus technologies where as PCI is parallel bus so PCIe uses less IO pins which reduces the layout complexity thus reduce the board design cost.
-
-* Allows to increase the transmission frequency.
+* `PCIe` allows to increase the transmission frequency.
 
 ----
 Gen1= data rate 2.5Gbps
 Gen2 = data rate 5Gbps
 Gen3 = data rate 8Gbps
 ----
-
-** Allow to scale bandwidth by providing support for multiple lane and that will increase the throughput.1-32 lanes support
-
-* PCIe replaces the shared bus with dedicated point-to-point links:
-
-** Each device connects through its own PCIe link.
-** Links terminate at a Root Complex or a PCIe switch.
-** Communication is packet-based.
-** Multiple devices can transmit simultaneously without contention.
 
 === PCIe Topology
 
@@ -52,28 +39,21 @@ This is how cpu rootcomplex and endpoint devices are communicate with each other
 * CPU receives the interrupts of all the endpoint devices via Root Complex, Interrupt section is covered later in the document
 * Root Complex can also access the memory without use CPU like DMA.
 * End point can access the Host memory directly using Root Complex. To access the memory host system makes end device bus master to give the permission to the endpoint device.
-* It also provide the address to which data can read or written.
-* PCIe uses point to point topology which means single serial link connect to PCIe device
+* PCIe uses point to point topology which means single serial link connect to PCIe device.
 * Each bus also assigned with the bus number during the software configuration which help the ECAM to generate the bus address.
 * These bus numbers are used by switches or bridges etc to do the packet transection.
 * PCIe has its own address space, which can be 32-bit or 64-bit depending on the root complex.
 
 [NOTE]
 --
-PCI address space is visible to the Only PCIe components like Root complex, endpoints, Switches and bridges etc.
+PCI address space is visible to the PCIe components like Root complex, endpoints, Switches and bridges etc.
 --
-
-image::images/PCIe Overview.png[width=70%]
-
-There are two types of PCI Express Port: 
-
-* The Root Port and the Switch Port.
-* The Root Port originates a PCI Express link from a PCI Express Root Complex and the Switch Port connects PCI Express links to internal logical PCI buses.
-* The Switch Port, which has its secondary bus representing the switch's internal routing logic, is called the switch's Upstream Port. The switch's Downstream Port is bridging from switch's internal routing bus to a bus representing the downstream PCI Express link from the PCI Express Switch.
 
 === PCIe Components
 
 As you can see in the picture available `root ports` are nothing but `virtual PCI to PCI bridges`. These bridges will be connected to bus 0 and these bridges will also create new busses to which other PCIe devices are connected.
+
+image::images/PCIe Overview.png[width=70%]
 
 Given picture shows 3 root ports:
 
@@ -139,7 +119,7 @@ The biggest shift from legacy PCI to PCIe was how devices are connected and comm
 * Legacy PCI used a shared bus.
 * PCIe uses point-to-point links.
 
-== Legacy PCI: Shared Bus Model
+== Taking a Peek Inside Legacy PCI
 
 In legacy PCI systems:
 
@@ -158,14 +138,83 @@ so when we are taking about PCIe we should also take about PCI bus device compon
 * PCI bridge
 * PCI device
 
-[NOTE]
---
-we will be using qemu extensively to explore the PCIe hierarchy. so lets understand how pcie topology is created in qemu.
---
+
+**we will be using qemu extensively to explore the PCIe hierarchy. so lets understand how pcie topology is created in qemu.**
+
+
+== Let’s Grab another Coffee icon:coffee[] and Explore the PCIe Hierarchy using lspci output
+
+Major change in PCIe from legacy PCI is the change from a true bus topology to a point-to-point link. We can take an example of network device to understand this(change from Hub to Switch). Each link is a  point to point link that is routed just like an Ethernet cord on a packet-switched Ethernet network. Instead of L3 packets, PCIe uses TLPs (Transaction Layer Protocol) to transfer data.
+That means PCIe is not a bus protocol. here `bus` means multiple devices are talking on the same physical link. TLP packet are routed over the toplogy to find out the correct destination. we will uderstand this in details in next sections.
+
+```bash
+root@playground-arm64:~# lspci -tv
+-[0000:00]-+-00.0  Red Hat, Inc. QEMU PCIe Host bridge
+           +-01.0  Red Hat, Inc. Virtio network device
+           +-02.0  Red Hat, Inc. Virtio RNG
+           +-03.0  Red Hat, Inc. Virtio block device
+           +-04.0  Red Hat, Inc. QEMU XHCI Host Controller
+           \-05.0  Red Hat, Inc. Device 10f1
+```
+
+* Each device connects through its own PCIe link.
+* Links terminate at a Root Complex or a PCIe switch.
+* Communication is packet-based.
+* Multiple devices can transmit simultaneously without contention.
+
+PCI devices are identified by a **Bus/Device/Function (BDF)** address. Busses are numbered 0–255, while Device and Function IDs specify the exact component.
+
+image::images/PCIe Hierarchy.png[width=100%]
+
+In the illustration above, we can see multiple `PCIe/PCI devices` and `root port` connected to the `Root Complex`. There can be mutiple `Root ports` which are physically supported by the `Root Complex`. 
+
+This output illustrates the PCIe topology of the QEMU machine. The `QEMU PCIe Host bridge` (at `00.0`) represents the Root Complex, which is logically integrated into the CPU silicon and serves as the host interface for all PCIe communication. In the following sections, we will explore how to expand this topology by adding new devices.
+
+Some root ports are connected to `PCIe switch` and some are connected to `PCIe endpoint` directly. We will cover this in **Exploring PCIe with QEMU**.
+
+Bus 0 is physically integrated into the CPU silicon. Devices connected to this bus reside within the processor package and communicate via proprietary, high-speed internal interconnects. While these interconnects use vendor-specific protocols, they are logically presented to the system using the PCIe protocol. These specialized devices are known as **Root Complex Integrated Endpoints (RCIE)** because they are integrated directly into the Root Complex.
+
+Below output is from the QEMU bu tit still shows the **Root Complex Integrated Endpoints (RCIE)**
+
+```bash
+00:04.0 USB controller: Red Hat, Inc. QEMU XHCI Host Controller (rev 01) (prog-if 30 [XHCI])
+        Subsystem: Red Hat, Inc. Device 1100
+        Control: I/O- Mem+ BusMaster+ SpecCycle- MemWINV- VGASnoop- ParErr- Stepping- SERR- FastB2B- DisINTx+
+        Status: Cap+ 66MHz- UDF- FastB2B- ParErr- DEVSEL=fast >TAbort- <TAbort- <MAbort- >SERR- <PERR- INTx-
+        Latency: 0, Cache Line Size: 64 bytes
+        Interrupt: pin A routed to IRQ 29
+        Region 0: Memory at 800000c000 (64-bit, non-prefetchable) [size=16K]
+        Capabilities: [90] MSI-X: Enable+ Count=16 Masked-
+                Vector table: BAR=0 offset=00003000
+                PBA: BAR=0 offset=00003800
+        Capabilities: [a0] Express (v2) Root Complex Integrated Endpoint, IntMsgNum 0. <<<<<< RCIE
+                DevCap: MaxPayload 128 bytes, PhantFunc 0
+                        ExtTag+ RBE+ FLReset- TEE-IO-
+                DevCtl: CorrErr- NonFatalErr- FatalErr- UnsupReq-
+                        RlxdOrd- ExtTag- PhantFunc- AuxPwr- NoSnoop-
+                        MaxPayload 128 bytes, MaxReadReq 128 bytes
+                DevSta: CorrErr- NonFatalErr- FatalErr- UnsupReq- AuxPwr- TransPend-
+                DevCap2: Completion Timeout: Not Supported, TimeoutDis- NROPrPrP- LTR-
+                         10BitTagComp- 10BitTagReq- OBFF Not Supported, ExtFmt+ EETLPPrefix+, MaxEETLPPrefixes 4
+                         EmergencyPowerReduction Not Supported, EmergencyPowerReductionInit-
+                         FRS-
+                         AtomicOpsCap: 32bit- 64bit- 128bitCAS-
+                DevCtl2: Completion Timeout: 50us to 50ms, TimeoutDis-
+                         AtomicOpsCtl: ReqEn-
+                         IDOReq- IDOCompl- LTR- EmergencyPowerReductionReq-
+                         10BitTagReq- OBFF Disabled, EETLPPrefixBlk-
+        Kernel driver in use: xhci_hcd
+```
 
 == Exploring PCIe with QEMU
 
-We will cover two usecases here:
+There are two types of PCI Express Port: 
+
+* The `Root Port` and the `Switch Port`.
+* The `Root Port` originates a PCI Express link from a PCI Express Root Complex and the `Switch Port` connects PCI Express links to internal logical PCI buses.
+* The `Switch Port`, which has its secondary bus representing the switch's internal routing logic, is called the switch's Upstream Port. The switch's Downstream Port is bridging from switch's internal routing bus to a bus representing the downstream PCI Express link from the `PCI Express Switch`.
+
+We will cover both the usecases here:
 
 1. Connect minimal-pcie-nic to pcie-root-port(pci bridge connected to bus 0).
 2. Connect PCIe switch to pcie-root-port(pci bridge connected to bus 0) and then connect minimal-pcie-nic to downstream ports of switch.
@@ -296,7 +345,7 @@ image::images/QEMU PCIe Switch.png[width=100%]
 This is enough to get the idea about how bus device and functions are created in PCIe topology.
 --
 
-== Let’s Grab another Coffee and Explore the PCIe Hierarchy
+ Explore the PCIe Hierarchy
 
 * `TBD`
 
@@ -305,4 +354,5 @@ This is enough to get the idea about how bus device and functions are created in
 * https://www.ti.com/lit/an/snla415/snla415.pdf?ts=1767492313842
 * https://blogs.oracle.com/linux/a-study-of-the-linux-kernel-pci-subsystem-with-qemu
 * https://github.com/qemu/qemu/blob/master/docs/pcie.txt
-*https://www.kernel.org/doc/Documentation/PCI/PCIEBUS-HOWTO.txt
+* https://www.kernel.org/doc/Documentation/PCI/PCIEBUS-HOWTO.txt
+* https://ctf.re/windows/kernel/pcie/tutorial/2023/02/14/pcie-part-1/
