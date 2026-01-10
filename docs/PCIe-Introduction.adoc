@@ -16,6 +16,7 @@ to avoid unnecessary complexity.
 
 Grab a cup of coffee icon:coffee[], and let's get started!
 
+[[what-is-pcie]]
 == So, What Exactly is PCIe?
 
 `PCIe` stands for `Peripheral Component Interconnect Express`. `PCIe` was brought to replace `PCI` with followig improvements. `PCIe` uses serial bus technologies where as `PCI` is parallel bus so `PCIe` uses less IO pins which reduces the layout complexity thus reduce the board design cost.
@@ -119,6 +120,7 @@ The biggest shift from legacy PCI to PCIe was how devices are connected and comm
 * Legacy PCI used a shared bus.
 * PCIe uses point-to-point links.
 
+[[legacy-pci]]
 == Taking a Peek Inside Legacy PCI
 
 In legacy PCI systems:
@@ -141,7 +143,7 @@ so when we are taking about PCIe we should also take about PCI bus device compon
 
 **we will be using qemu extensively to explore the PCIe hierarchy. so lets understand how pcie topology is created in qemu.**
 
-
+[[Explore the PCIe Hierarchy using lspci output]]
 == Let’s Grab another Coffee icon:coffee[] and Explore the PCIe Hierarchy using lspci output
 
 Major change in PCIe from legacy PCI is the change from a true bus topology to a point-to-point link. We can take an example of network device to understand this(change from Hub to Switch). Each link is a  point to point link that is routed just like an Ethernet cord on a packet-switched Ethernet network. Instead of L3 packets, PCIe uses TLPs (Transaction Layer Protocol) to transfer data.
@@ -206,7 +208,8 @@ Below output is from the QEMU bu tit still shows the **Root Complex Integrated E
         Kernel driver in use: xhci_hcd
 ```
 
-== Exploring PCIe with QEMU
+[[Exploring PCIe using QEMU]]
+== Exploring PCIe using QEMU
 
 There are two types of PCI Express Port: 
 
@@ -264,6 +267,7 @@ Place only the following kinds of devices directly on the Root Complex:
    -----------   ------------------   -------------------   --------------
 ```
 
+[[Connect minimal-pcie-nic to pcie-root-port(pci bridge connected to bus 0)]]
 === Connect minimal-pcie-nic to pcie-root-port(pci bridge connected to bus 0)
 
 * Connect `minimal-pcie-nic` to `pcie-root-port`. Create root port at address `06.0` name it `rp2`.
@@ -303,6 +307,7 @@ Bus 00
     
 image::../images/PCIe Root Port.png[width=100%]
 
+[[Connect PCIe switch to pcie-root-port(pci bridge connected to bus 0)and then connect minimal-pcie-nic to downstream ports of switch]]
 === Connect PCIe switch to pcie-root-port(pci bridge connected to bus 0)and then connect minimal-pcie-nic to downstream ports of switch
 
 Here is the command to create `root port`, `upstream port` and `downstream ports` and connect minimal-pcie-nic to downstream ports of switch and connect upstream port to root port
@@ -349,6 +354,7 @@ This is enough to get the idea about how bus device and functions are created in
 
 * `TBD`
 
+[[references]]
 == References
 
 * https://www.ti.com/lit/an/snla415/snla415.pdf?ts=1767492313842
