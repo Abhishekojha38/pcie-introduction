@@ -350,7 +350,199 @@ image::../images/QEMU PCIe Switch.png[width=100%]
 This is enough to get the idea about how bus device and functions are created in PCIe topology.
 --
 
- Explore the PCIe Hierarchy
+== Type 0 and Type 1 Configurations Space
+
+`Endpoints` referred to as `Type 0` devices, and `Switch` (or a `Bridge`) referred to as `Type 1` devices.
+
+* Type 1 headers for Root Complex, switches, and bridges.
+
+image::../images/PCIE-Type0.png[width=50%]
+
+* Type 0 for endpoints.
+
+image::../images/PCIe-Type1.png[width=50%]
+
+* There are two ways to access the configuration space.
+** *PCI-Compatible Configuration Access:* PCI-Compatible configuration method can only access 256byte (PCI
+standard) .Using Configuration Address Port 0xCF8h and data port 0xCFCh
+
+** *PCIE-Compatible Configuration Access:* PCIe-Compatible Configuration Method uses ECAM address. Using this
+method user can access 4KB of Configuration space.
+
+== ECAM QEMU Example
+We are taking an example here to understand the **ECAM**
+
+```lspic
+root@playground-arm64:~# lspci -tv
+-[0000:00]-+-00.0  Red Hat, Inc. QEMU PCIe Host bridge
+           +-01.0  Red Hat, Inc. Virtio network device
+           +-02.0  Red Hat, Inc. Virtio RNG
+           +-03.0  Red Hat, Inc. Virtio block device
+           +-04.0  Red Hat, Inc. QEMU XHCI Host Controller
+           \-06.0-[01-04]----00.0-[02-04]--+-00.0-[03]----00.0  Red Hat, Inc. Device 10f1
+                                           \-01.0-[04]----00.0  Red Hat, Inc. Device 10f1
+```
+
+* Check the `ECAM address` from `/proc/iomem`
+
+```bash
+root@playground-arm64:~# cat /proc/iomem |grep ECAM
+4010000000-401fffffff : PCI ECAM
+root@playground-arm64:~#
+```
+
+* Now let say we want to read the vendor id of `04:00.0  Red Hat, Inc. Device 10f`. This requires some calculations.
+
+```bash
+| 27 - 20 | 19 - 15 | 14 - 12     |  11 - 0       |
+| Bus Nr  | Dev Nr  | Function Nr | Register      |
+```
+
+Formula to calculate the address:
+
+```bash
+>>> hex(ECAM Address + ((bus << 20) | (dev << 15) | (func << 12)))
+```
+
+```bash
+Python 3.10.12 (main, Jan  8 2026, 06:52:19) [GCC 11.4.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>> hex(0x4010000000 + ((4 << 20) | (0 << 15) | (0 << 12)))
+'0x4010400000'
+>>>
+```
+
+* Read and compare the vendor id
+
+```bash
+root@playground-arm64:~# devmem2 0x4010400000
+/dev/mem opened.
+Memory mapped at address 0xffff9ee0d000.
+Read at address  0x4010400000 (0xffff9ee0d000): 0x10F11AF4
+root@playground-arm64:~# lspci -s 04:00.0 -x
+04:00.0 Ethernet controller: Red Hat, Inc. Device 10f1 (rev 01)
+00: f4 1a f1 10 06 04 10 00 01 00 00 02 00 00 00 00
+10: 00 00 20 10 00 10 20 10 00 00 00 00 00 00 00 00
+20: 00 00 00 00 00 00 00 00 00 00 00 00 f4 1a 00 11
+30: 00 00 00 00 98 00 00 00 00 00 00 00 00 00 00 00
+
+root@playground-arm64:~#
+```
+
+== ECAM i.MX6 Example
+
+* First we should know about the Memory map of i.MX6. This info can be easily derived from the device tree.
+
+```bash
+DBI             : start addr = 0x01ffc000 - end addr = 0x1ffffff - size = 0x4000 (16KB)
+Config Space    : start addr = 0x01f00000 - end addr = 0x1f7ffff - size = 0x80000 (512KB) <<<<
+Downstream IO   : start addr = 0x01f80000 - end addr = 0x1f8ffff - size = 0x00010000 (64KB)
+NP memory       : start addr = 0x01000000 - end addr = 0x1efffff - size = 0x00f00000 (15MB)
+```
+
+* lspci dump
+
+```bash
+root@imx6:~# lspci -vv
+00:00.0 PCI bridge: Synopsys, Inc. DWC_usb3 / PCIe bridge (rev 01) (prog-if 00 [Normal decode])
+01:00.0 Network controller: Intel Corporation Wi-Fi 6 AX210/AX211/AX411 160MHz (rev 1a)
+root@imx6:~#
+```
+
+* PCIe ECAM maps configuration space in the following way:
+
+```bash
+Device: 01:00.0 → Bus 1, Device 0, Function 0
+```
+
+```bash
+# imx6dl Manual: ECAM Scheme from PCIe Specification using an 8-bit BDF Bus Number
+>>> bus, dev, func, ext_reg, reg = 1, 0, 0, 0, 0
+>>> ecam_offset = hex((bus << 24) + (dev << 19) + (func << 16) + (ext_reg << 8) + (reg << 2))
+>>> print(ecam_offset)
+0x1000000
+>>>
+```
+
+* In i.MX6, ECAM space starts at `0x01f00000` and it maps all the endpoint device configuration space.
+
+----
+ECAM cpu address -> translate to -> pci address + ecam_offset
+
+0x01f00000 -> 0x1000000
+----
+
+* Lets try to read the `0x1f00000`. We should get vendor and device id of EP `01:00.0`
+----
+$ devmem2 0x1f00000
+ 0x002B168C
+
+$ root@imx6dl:~# lspci -s 01:00.0 -x
+01:00.0 Network controller: Qualcomm Atheros AR9285 Wireless Network Adapter (PCI-Express) (rev 01)
+00: 8c 16 2b 00 ....
+----
+
+image::../images/PCIe Address Space.png[width=100%]
+
+[NOTE]
+ATUs are programmed to convert the CPU address to PCI address.`0x01f00000` mapped to `0x1000000` using Outbound ATU configuration.
+
+**Lets briefly cover the ATUs**
+
+ATUs are programmed to convert the CPU address to PCI address. CPU address is the location on the physical memory map and PCI address is the address which Root Comples uses to generate the TLP to access the configuration space.
+
+* Here is i.MX6 ATU configuration
+
+```bash
+# Output from dmesg
+[    7.399922] ATU[1] OUTBOUND:
+[    7.402807]   CPU addr : 0x01f00000 - 0x01f7ffff (size 0x80000)
+[    7.408729]   PCI addr : 0x0000000001000000
+[    7.412913]   TYPE: 0x4 FUNC: 0
+
+# Register dump
+# ATU Region Lower Base Address Register
+root@imx6dl:~# devmem2 0x1ffc900 w 0x00000001 << region 1
+root@imx6dl:~# devmem2 0x1ffc904
+0x00000004
+root@imx6dl:~# devmem2 0x1ffc908
+0x80000000
+root@imx6dl:~# devmem2 0x1ffc90C
+ 0x01F00000
+root@imx6dl:~# devmem2 0x1ffc910
+ 0x00000000
+root@imx6dl:~# devmem2 0x1ffc914
+ 0x01F7FFFF
+root@imx6dl:~# devmem2 0x1ffc918
+ 0x01000000
+root@imx6dl:~# devmem2 0x1ffc91c
+ 0x00000000
+root@imx6dl:~#
+```
+*Refer i.MX6dl reference manual for register details**
+
+== Address Space
+This section explains the address space used by PCI transections.
+* Left is the SOC which has the root complex IP.
+* Right we have PCIe express endpoint.
+* Host system can access the PCIe endpoint only using this PCIe address space. This PCIe address space is a virtual address space which is used by PCIe devices.
+* PCIE address space is just a list of address used in the transection layer packet in order to identify the target of the transection.
+* IP Registers: registers to enable the clock, program the PHY, configure lane width, configure the speed, registers to program the address translation unit.
+
+== PCIe IO Lines
+
+* Less number of IO lines compare to PCI.
+* Uses pair of differential RX lines and pair of differential TX lines.
+* Given figure shows two lane card design as it shows two pair of differential RX lines and two pair of differential RX lines.
+* PRESET# tells when the voltage and clock signals are stable.
+* PRSNT1# and PRSNT2# used for hot plug.
+* PCIe doesn't uses dedicated IRQ lines unlike PCI which has 4 IRQ lines.
+* PCIe uses in band signalling even for interrupt and it will be all transmitted using this differential TX and RX lines.
+
+image::../images/PCIe-IO-Lines.png[]
+
+
+
 
 * `TBD`
 
