@@ -2,8 +2,8 @@
 
 = Getting Started with PCIe (A Practical Beginner’s Guide)
 
-Hello! I’m writing this post to share the PCIe details I’ve picked up while working on real-world PCIe
-projects—things like chasing down LTSSM issues and writing NIC drivers. I hope this guide helps you
+Hello! I’m writing this post to share the PCIe details I’ve learnt while working on real-world PCIe
+projects—things like debugging the LTSSM issues and writing NIC drivers. I hope this guide helps you
 understand the basics of PCIe and get started with your own PCIe projects.
 
 In this series, I aim to:
@@ -13,8 +13,6 @@ In this series, I aim to:
 * Provide practical examples of investigating PCIe hierarchies.
 * Keep it simple and easy to understand. Prioritize conceptual clarity over specification-perfect details
 to avoid unnecessary complexity.
-
-Grab a cup of coffee icon:coffee[], and let's get started!
 
 [[what-is-pcie]]
 == So, What Exactly is PCIe?
@@ -31,26 +29,7 @@ Gen2 = data rate 5Gbps
 Gen3 = data rate 8Gbps
 ----
 
-=== PCIe Topology
-
-This is how cpu rootcomplex and endpoint devices are communicate with each other.
-
-* CPU will access the Root Complex to configure the Root complex IP.
-* Endpoint device will be accessed by CPU via Root Complex.
-* CPU receives the interrupts of all the endpoint devices via Root Complex, Interrupt section is covered later in the document
-* Root Complex can also access the memory without use CPU like DMA.
-* End point can access the Host memory directly using Root Complex. To access the memory host system makes end device bus master to give the permission to the endpoint device.
-* PCIe uses point to point topology which means single serial link connect to PCIe device.
-* Each bus also assigned with the bus number during the software configuration which help the ECAM to generate the bus address.
-* These bus numbers are used by switches or bridges etc to do the packet transection.
-* PCIe has its own address space, which can be 32-bit or 64-bit depending on the root complex.
-
-[NOTE]
---
-PCI address space is visible to the PCIe components like Root complex, endpoints, Switches and bridges etc.
---
-
-=== PCIe Components
+=== PCIe Topology & Components
 
 As you can see in the picture available `root ports` are nothing but `virtual PCI to PCI bridges`. These bridges will be connected to bus 0 and these bridges will also create new busses to which other PCIe devices are connected.
 
@@ -97,6 +76,22 @@ image::../images/PCIe Switch.png[width=50%]
 | `Endpoint(EP)` is a device that can be connected to a Root Port or Switch Port.
 
 |===
+
+This is how cpu rootcomplex and endpoint devices are communicate with each other.
+
+* Endpoint device will be accessed by CPU via Root Complex.
+* CPU receives the interrupts of all the endpoint devices via Root Complex, Interrupt section is covered later in the document
+* Root Complex can also access the memory without use CPU like DMA.
+* End point can access the Host memory directly using Root Complex. To access the memory host system makes end device bus master to give the permission to the endpoint device.
+* PCIe uses point to point topology which means single serial link connect to PCIe device.
+* Each bus also assigned with the bus number during the software configuration which help the ECAM to generate the bus address.
+* These bus numbers are used by switches or bridges etc to do the packet transection.
+* PCIe has its own address space, which can be 32-bit or 64-bit depending on the root complex.
+
+[NOTE]
+--
+PCI address space is visible to the PCIe components like Root complex, endpoints, Switches and bridges etc.
+--
 
 === PCI Express PHY Layer
 
@@ -484,6 +479,14 @@ $ root@imx6dl:~# lspci -s 01:00.0 -x
 
 image::../images/PCIe Address Space.png[width=100%]
 
+This section explains the address space used by PCI transections.
+
+* Left is the SOC which has the root complex IP.
+* Right we have PCIe express endpoint.
+* Host system can access the PCIe endpoint only using this PCIe address space. This PCIe address space is a virtual address space which is used by PCIe devices.
+* PCIE address space is just a list of address used in the transection layer packet in order to identify the target of the transection.
+* IP Registers: registers to enable the clock, program the PHY, configure lane width, configure the speed, registers to program the address translation unit.
+
 [NOTE]
 ATUs are programmed to convert the CPU address to PCI address.`0x01f00000` mapped to `0x1000000` using Outbound ATU configuration.
 
@@ -519,15 +522,76 @@ root@imx6dl:~# devmem2 0x1ffc91c
  0x00000000
 root@imx6dl:~#
 ```
+
 *Refer i.MX6dl reference manual for register details**
 
-== Address Space
-This section explains the address space used by PCI transections.
-* Left is the SOC which has the root complex IP.
-* Right we have PCIe express endpoint.
-* Host system can access the PCIe endpoint only using this PCIe address space. This PCIe address space is a virtual address space which is used by PCIe devices.
-* PCIE address space is just a list of address used in the transection layer packet in order to identify the target of the transection.
-* IP Registers: registers to enable the clock, program the PHY, configure lane width, configure the speed, registers to program the address translation unit.
+== Understand PCIe from memory point of view
+
+It s not easy to create a picture in mind that what is happening when we iniate Configurations read or write request and Memory read or write request.I am trying to write it in a way that it will be easy to understand.
+
+We will create a mapping of following.
+
+* CPU Address Space: This is the physical address space of the CPU(which CPU understands) and create virtual memory mapping when accessing it from Driver(kernel space).
+* PCIe Address Space: This is the virtual address space used by PCIe devices. This space if only understood by Root Complex and PCIe Device.
+* RAM: This is the physical memory space.
+* MMIO: This is the memory mapped I/O space.
+
+A typical system maps virtual memory to physical memory across distinct regions for RAM and PCI devices. Due to the 32-bit addressing limitations of older PCI devices, memory is often split:
+
+* **32-bit Windows (Below 4GB):** A constrained space for legacy devices. RAM or PCI resources are moved above 4GB if they exceed this window.
+* **64-bit Windows (Above 4GB):** A second window for modern devices that support 64-bit addressing. 
+
+Since modern processors support 64-bit addresses, they can access both regions seamlessly. It is generally preferred to move as much device memory as possible above the 4GB line to avoid cluttering the limited 32-bit address space.
+
+This is the high level picture:
+
+When the CPU performs a read or write operation to an address within the PCI memory region, the Root Complex automatically generates a Transaction Layer Packet (TLP) and transmits it to the PCIe device.
+
+image::../images/Physical-to-Virtual-mapping.png[width=50%]
+
+Here is the example from QEMU:
+
+```bash
+root@playground-arm64:~# cat /proc/iomem |grep pci
+10000000-3efeffff : pcie@10000000
+    10043000-10043fff : minimal_pcie_nic_drv
+    10044000-10044fff : minimal_pcie_nic_drv
+8000000000-ffffffffff : pcie@10000000
+    8000000000-8000003fff : virtio-pci-modern
+    8000004000-8000007fff : virtio-pci-modern
+    8000008000-800000bfff : virtio-pci-modern
+    8000010000-8000013fff : virtio-pci-modern
+root@playground-arm64:~#
+```
+
+=== Read PCIe configuration space register
+
+Let’s travers the read config path from root complex to pcie device.
+
+image::../images/PCIe-Config-Read.png[width=100%]
+
+1. Some code (Let say PCIe NIC driver) wants to read the Vendor ID register of the PCIe device. Drive can either use predefined pcie_config_read32() or pcie_config_read16() or pcie_config_read8() function or it can directly access the ECAM virtual mapping. By creating a virtual mapping of ECAM space.
+2. When driver initate the read. it ti traslated to physical ecam address.
+3. Read on this address casues the root complex to generate a configuration TLP and send it through the hierarchy.
+4. TLP packet looks like this. This packet we captured using PCIe trace.
+
+image::../images/ConfigReadType0-0.png[width=120%]
+
+image::../images/ConfigReadType0-1.png[width=120%]
+
+[NOTE]
+Format of TLP packet is explained later. For now we check that Requested ID is `00 00` which means it is coming from Root Complex and Completer ID is `01 00` which means it is going to Bus 1 Device 0 Function 0. Register Offset is `0x00` which means it is going to Vendor ID register.
+
+5.The TLP is received by endpoint on Bus 1 and sees that it is a configuration space TLP. It now knows to respond with a configuration space response TLP that contains the contents of the value at offset 0x0.
+
+=== Respose of Config Read
+
+The device responds with a special TLP containing the value at offset 0 (which we know is the Vendor ID). That packet makes its way back to the Requester (which was the Root Complex) and the interconnect informs the CPU to update the value to the value of 0x8680 which is the vendor ID of the Intel wifi card. Below if the response TLP.
+
+image::../images/ConfigReadType0-2.png[width=120%]
+
+image::../images/ConfigReadType0-3.png[width=120%]
+
 
 == PCIe IO Lines
 
