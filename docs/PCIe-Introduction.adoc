@@ -592,6 +592,135 @@ image::../images/ConfigReadType0-2.png[width=120%]
 
 image::../images/ConfigReadType0-3.png[width=120%]
 
+== Data Transfer in PCIe
+
+`Configuration space` serves as the primary mechanism for device communication via BDF during the enumeration process(LTSSM). This simplified transfer mode is essential for establishing the parameters required for all subsequent data transfer methods(link, lane, MSS, etc). Following enumeration, the configuration space contains the settings necessary for the device to perform its intended tasks alongside the host. Although it continues to be used for monitoring device status and link state, it is not utilized for high-speed data throughput or primary device operations.
+
+Lets talk about data transfer which is actualy using `high speed` PCIe capabilities or implementation.
+
+**What is BAR?**
+
+We have already used this term in above sections. Lets dig more deeper and understand what is BAR and how Rootcomplex is using it to map the memory space of a PCIe device to the memory space of the CPU(MMIO).
+
+`Base Address Register (BAR)` is a 32-bit or 64-bit register that is used to map the memory space of a PCIe device to the memory space of the CPU.
+
+=== Steps to map the endpoint device memory space to the CPU memory space
+
+Memory space cannot be accessed in the same way as configuration space because the size of the memory space varies between devices. Therefore, the host system must first determine the size of the memory space required by the endpoint.
+
+* To determine the size, the host system uses the **Base Address Registers (BARs)** located in the configuration space header.
+* BARs can be utilized for both Memory and I/O space mapping.
+* **Bit 0:** Indicates whether the endpoint requires `Memory space` (0) or `I/O space` (1).
+* **Bits 1-2:** Describe if the PCIe endpoint supports `32-bit address decoding` or `64-bit address decoding`.
+* **Bit 3:** Indicates whether the memory space is `prefetchable` or `non-prefetchable`.
+
+image::../images/BAR-Register.png[width=50%]
+
+**How to get the Size requested by Endpoint ?**
+
+To determine the size of the memory space, the host system follows these steps:
+
+. **Write all 1's** to the BAR register.
+. **Read back** the BAR register. The endpoint will respond with a value where the lower bits (which are read-only) remain unchanged.
+. **Clear the last 4 bits** (control bits).
+. **Invert** the bits.
+. **Add 1**.
+
+*Example:*
+
+image::../images/BAR-Register-1.png[width=20%]
+
+In the given example, the endpoint has requested a memory space of 1MB.
+
+* Once the host system gets the size of the memory space, it will allocate the same size of memory in the configurable address space (in the dedicated memory space region).
+* This will then be used to access the memory of the PCIe express endpoint.
+* The system will allocate 1MB of memory in the dedicated memory space given for the Root Complex.
+
+**ATMU configuration for Memory transection**
+
+As per the given figure, we program the source address (for example, 'C' in the PCIe Memory space) to address 'C' in the PCIe address space.
+
+* The source address is "C", the destination address is "C", and the size is 256MB as we are translating the complete address space. The type is MEM.
+* Since we are mapping the entire Memory Space available for the Root Complex to the PCIe address space with type as MEM, we avoid performing address translation for each individual device.
+* Whenever the CPU accesses this particular region in the configurable address space, the Root Complex will access this region in the PCIe address space based on the ATMU.
+* Currently, the PCIe endpoint will not respond to the memory transaction because the PCIe address space is not yet mapped to the endpoint BARs.
+* We will program the BAR registers with the PCIe address space to which the memory is mapped.
+* In the Endpoint configuration space, address "X" is programmed to map the endpoint memory to the PCIe address space.
+
+image::../images/ATMU-configuration-for-mem.png[width=100%]
+
+Use iMX6 meory map to understand this better.
+
+* From device tree
+
+```bash
+reg = <0x01ffc000 0x04000>,<0x01f00000 0x80000>;
+reg-names = "dbi", "config";
+ranges = <0x81000000 0 0 0x01f80000 0 0x00010000 /* downstream I/O */ -> 64KB
+0x82000000 0 0x01000000 0x01000000 0 0x00f00000>; /* non-prefetchable memory */ -> 15MB
+
+DBI             : start addr = 0x01ffc000 - end addr = 0x1ffffff - size = 0x4000 (16KB)
+Config Space    : start addr = 0x01f00000 - end addr = 0x1f7ffff - size = 0x80000 (512KB)
+Downstream IO   : start addr = 0x01f80000 - end addr = 0x1f8ffff - size = 0x00010000 (64KB)
+NP memory       : start addr = 0x01000000 - end addr = 0x1efffff - size = 0x00f00000 (15MB)
+```
+
+* Here is the mapping of entire memory space(CPU address space to PCIe address space)
+
+```bash
+[    1.182170] ATU[0] OUTBOUND:
+[    1.207125]   CPU addr : 0x01000000 - 0x01efffff (size 0xf00000)
+[    1.213143]   PCI addr : 0x0000000001000000
+[    1.217342]   TYPE: 0x0 FUNC: 0
+
+root@imx6dl:~# devmem2 0x1ffc900 w 0x00000000 << region 0
+root@imx6dl:~# devmem2 0x1ffc90C
+0x01000000
+root@imx6dl:~# devmem2 0x1ffc904
+0x00000000
+root@imx6dl:~# devmem2 0x1ffc908
+0x80000000
+root@imx6dl:~# devmem2 0x1ffc90c
+0x01000000
+root@imx6dl:~# devmem2 0x1ffc910
+0x00000000
+root@imx6dl:~# devmem2 0x1ffc914
+0x01EFFFFF
+root@imx6dl:~# devmem2 0x1ffc918
+0x01000000
+root@imx6dl:~# devmem2 0x1ffc91c
+0x00000000
+root@imx6dl:~#
+```
+
+* This is how memory is assigned to PCIe device.
+
+```bash
+01000000-01efffff : pcie@1ffc000
+  01000000-010fffff : 0000:00:00.0
+  01100000-011fffff : PCI Bus 0000:01
+    01100000-0110ffff : 0000:01:00.0
+      01100000-0110ffff : ath9k
+  01200000-0120ffff : 0000:00:00.0
+01ffc000-01ffffff : 1ffc000.pcie dbi
+
+00:00.0 PCI bridge: Synopsys :Region 0: Memory at 01000000 (32-bit, non-prefetchable) [virtual] [size=1M]
+01:00.0 Network controller: Qualcomm Atheros AR9285 :Region 0: Memory at 01100000 (64-bit, non-prefetchable) [virtual] [size=64K]
+```
+
+* PCIe memory
+
+image::../images/memoryspace.png[width=50%]
+
+IO and memory spaces are two address spaces used by the devices to communicate
+with their device driver running in the Linux kernel on CPU.
+
+* The upper 16 KB PCIe host configuration space.
+* This memory segment is used to map the configuration space of PCIe RC. SW
+can access PCIe RC core configuration space through the DBI interface.
+* PCIe device configuration space.
+* Used to map the configuration spaces of PCIe EP devices that are inserted to the
+RC downstream port.
 
 == PCIe IO Lines
 
