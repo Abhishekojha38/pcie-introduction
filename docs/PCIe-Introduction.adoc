@@ -6,32 +6,64 @@ Hello! I’m writing this post to share the PCIe details I’ve learnt while wor
 projects—things like debugging the LTSSM issues and writing NIC drivers. I hope this guide helps you
 understand the basics of PCIe and get started with your own PCIe projects.
 
-In this series, I aim to:
+In this series, I aim to focus on PCIe fundamentals with examples using QEMU and i.MX6 based platform.
 
-.Do
-* Focus on software-side fundamentals to build a solid mental PCIe model.
-* Provide practical examples of investigating PCIe hierarchies.
-* Keep it simple and easy to understand. Prioritize conceptual clarity over specification-perfect details
-to avoid unnecessary complexity.
+[NOTE]
+--
+Follow this README to build the QEMU for understanding the PCIe topology. +
+link:https://github.com/Abhishekojha38/yocto-playground/blob/main/README.md[Yocto Playground README]
+--
+
+I am using `minimal-pcie-nic` device example in this series to explain the PCIe fundamentals. You can find the device example here: link:https://github.com/Abhishekojha38/qemu-pcie[minimal-pcie-nic].
 
 [[what-is-pcie]]
-== So, What Exactly is PCIe?
+== icon:rocket[] So, What Exactly is PCIe?
 
 `PCIe` stands for `Peripheral Component Interconnect Express`. `PCIe` was brought to replace `PCI` with followig improvements. `PCIe` uses serial bus technologies where as `PCI` is parallel bus so `PCIe` uses less IO pins which reduces the layout complexity thus reduce the board design cost.
 
 image::../images/Timeline of PCIe Interface.png[] 
 
-* `PCIe` allows to increase the transmission frequency.
+=== icon:exchange[] PCIe bandwidth
 
-----
-Gen1= data rate 2.5Gbps
-Gen2 = data rate 5Gbps
-Gen3 = data rate 8Gbps
-----
+[cols="1,1,1,1", options="header"]
+|===
+| PCIe Generation | Transfer Rate (GT/s) | Encoding | Effective Bandwidth per Lane
 
-=== PCIe Topology & Components
+| PCIe 1.0
+| 2.5
+| 8b/10b
+| ~250 MB/s
 
-As you can see in the picture available `root ports` are nothing but `virtual PCI to PCI bridges`. These bridges will be connected to bus 0 and these bridges will also create new busses to which other PCIe devices are connected.
+| PCIe 2.0
+| 5.0
+| 8b/10b
+| ~500 MB/s
+
+| PCIe 3.0
+| 8.0
+| 128b/130b
+| ~985 MB/s
+
+| PCIe 4.0
+| 16.0
+| 128b/130b
+| ~1.97 GB/s
+
+| PCIe 5.0
+| 32.0
+| 128b/130b
+| ~3.94 GB/s
+
+| PCIe 6.0
+| 64.0
+| PAM4 + FEC
+| ~7.88 GB/s
+|===
+
+
+=== icon:microchip[] PCIe Topology & Components
+
+As you can see in the picture (`Root Complex`) available `root ports` are nothing but `virtual PCI to PCI bridges`. These bridges will be connected to `bus 0` and these bridges will also create new busses to which other PCIe devices are connected.
 
 image::../images/PCIe Overview.png[width=70%]
 
@@ -41,8 +73,11 @@ Given picture shows 3 root ports:
 2. `Root Port 2` is connected to `PCIe switch`.
 3. `Root Port 3` is connected to `PCIe express endpoint`.
 
+*Root Complex Insights*
+
 image::../images/PCIe Topology.png[width=50%]
 
+*PCIe Components*
 
 [cols="1,3", options="header"]
 |===
@@ -93,7 +128,7 @@ This is how cpu rootcomplex and endpoint devices are communicate with each other
 PCI address space is visible to the PCIe components like Root complex, endpoints, Switches and bridges etc.
 --
 
-=== PCI Express PHY Layer
+=== icon:plug[] PCI Express PHY Layer
 
 image::../images/PCIe Overview 1.png[width=50%]
 
@@ -115,6 +150,56 @@ The biggest shift from legacy PCI to PCIe was how devices are connected and comm
 * Legacy PCI used a shared bus.
 * PCIe uses point-to-point links.
 
+[cols="1,1,1", options="header"]
+|===
+| Feature | PCI (Legacy) | PCI Express (PCIe)
+
+| Bus type
+| Parallel, shared bus
+| Serial, point-to-point links
+
+| Topology
+| Shared bus
+| Switched fabric (Root Complex, Switches, Endpoints)
+
+| Bandwidth
+| Shared among all devices
+| Dedicated per device / per link
+
+| Duplex mode
+| Half-duplex
+| Full-duplex
+
+| Scalability
+| Limited (timing skew issues)
+| Highly scalable (lanes x1, x4, x8, x16)
+
+| Signaling
+| Single-ended, parallel
+| Differential, high-speed serial
+
+| Clocking
+| Separate clock line
+| Embedded clock (clock data recovery)
+
+| Protocol
+| Simple load/store transactions
+| Packet-based (TLPs)
+
+| Interrupts
+| INTx pins
+| Message-based (MSI / MSI-X)
+
+| Hot-plug support
+| Limited
+| Native support
+
+| Typical bandwidth
+| ~133 MB/s (33 MHz, 32-bit)
+| GB/s per lane (generation dependent)
+|===
+
+
 [[legacy-pci]]
 == Taking a Peek Inside Legacy PCI
 
@@ -135,14 +220,17 @@ so when we are taking about PCIe we should also take about PCI bus device compon
 * PCI bridge
 * PCI device
 
-
-we will be using qemu extensively to explore the PCIe hierarchy. so lets understand how pcie topology is created in qemu.
+During this series we will be using qemu to explain the PCIe topology and also capturing the i.MX6 PCIe topology.
 
 [[explore-the-pcie-hierarchy-using-lspci-output]]
-== Explore the PCIe Hierarchy using lspci output
+== QEMU: Explore the PCIe Hierarchy using lspci output
 
 Major change in PCIe from legacy PCI is the change from a true bus topology to a point-to-point link. We can take an example of network device to understand this(change from Hub to Switch). Each link is a  point to point link that is routed just like an Ethernet cord on a packet-switched Ethernet network. Instead of L3 packets, PCIe uses TLPs (Transaction Layer Protocol) to transfer data.
 That means PCIe is not a bus protocol. here `bus` means multiple devices are talking on the same physical link. TLP packet are routed over the toplogy to find out the correct destination. we will uderstand this in details in next sections.
+
+```bash
+256 buses × 32 devices × 8 functions = 65,536 functions
+```
 
 ```bash
 root@playground-arm64:~# lspci -tv
@@ -230,6 +318,8 @@ Some of the key points to remember:
 We need to understand the Root Bus (pcie.0) to understand how PCIe topology is created in qemu.
 
 === Root Bus (pcie.0)
+
+These points are copied for kernel documentation as-is. I want to keep it here for reference.
 
 Place only the following kinds of devices directly on the Root Complex:
 
@@ -434,6 +524,18 @@ Config Space    : start addr = 0x01f00000 - end addr = 0x1f7ffff - size = 0x8000
 Downstream IO   : start addr = 0x01f80000 - end addr = 0x1f8ffff - size = 0x00010000 (64KB)
 NP memory       : start addr = 0x01000000 - end addr = 0x1efffff - size = 0x00f00000 (15MB)
 ```
+
+image::../images/memoryspace.png[width=50%]
+
+IO and memory spaces are two address spaces used by the devices to communicate
+with their device driver running in the Linux kernel on CPU.
+
+* The upper 16 KB PCIe host configuration space.
+* This memory segment is used to map the configuration space of PCIe RC. SW
+can access PCIe RC core configuration space through the DBI interface.
+* PCIe device configuration space.
+* Used to map the configuration spaces of PCIe EP devices that are inserted to the
+RC downstream port.
 
 * lspci dump
 
@@ -707,20 +809,6 @@ root@imx6dl:~#
 00:00.0 PCI bridge: Synopsys :Region 0: Memory at 01000000 (32-bit, non-prefetchable) [virtual] [size=1M]
 01:00.0 Network controller: Qualcomm Atheros AR9285 :Region 0: Memory at 01100000 (64-bit, non-prefetchable) [virtual] [size=64K]
 ```
-
-* PCIe memory
-
-image::../images/memoryspace.png[width=50%]
-
-IO and memory spaces are two address spaces used by the devices to communicate
-with their device driver running in the Linux kernel on CPU.
-
-* The upper 16 KB PCIe host configuration space.
-* This memory segment is used to map the configuration space of PCIe RC. SW
-can access PCIe RC core configuration space through the DBI interface.
-* PCIe device configuration space.
-* Used to map the configuration spaces of PCIe EP devices that are inserted to the
-RC downstream port.
 
 == PCIe IO Lines
 
