@@ -2,11 +2,13 @@
 
 = Getting Started with PCIe (A Practical Beginner’s Guide)
 
-Hello! I’m writing this post to share the PCIe details I’ve learnt while working on real-world PCIe
-projects—things like debugging the LTSSM issues and writing NIC drivers. I hope this guide helps you
-understand the basics of PCIe and get started with your own PCIe projects.
+Hello! I’m writing this post to share the PCIe details I’ve learnt while working
+on real-world PCIe projects—things like debugging the LTSSM issues and writing
+NIC drivers. I hope this guide helps you understand the basics of PCIe and get
+started with your own PCIe projects.
 
-In this series, I aim to focus on PCIe fundamentals with examples using QEMU and i.MX6 based platform.
+In this series, I aim to focus on PCIe fundamentals with examples using QEMU and
+i.MX6 based platform.
 
 [NOTE]
 --
@@ -14,12 +16,17 @@ Follow this README to build the QEMU for understanding the PCIe topology. +
 link:https://github.com/Abhishekojha38/yocto-playground/blob/main/README.md[Yocto Playground README]
 --
 
-I am using `minimal-pcie-nic` device example in this series to explain the PCIe fundamentals. You can find the device example here: link:https://github.com/Abhishekojha38/qemu-pcie[minimal-pcie-nic].
+I am using `minimal-pcie-nic` device example in this series to explain the
+PCIe fundamentals. You can find the device example here:
+link:https://github.com/Abhishekojha38/qemu-pcie[minimal-pcie-nic].
 
 [[what-is-pcie]]
 == icon:rocket[] So, What Exactly is PCIe?
 
-`PCIe` stands for `Peripheral Component Interconnect Express`. `PCIe` was brought to replace `PCI` with followig improvements. `PCIe` uses serial bus technologies where as `PCI` is parallel bus so `PCIe` uses less IO pins which reduces the layout complexity thus reduce the board design cost.
+`PCIe` stands for `Peripheral Component Interconnect Express`. `PCIe` was
+brought to replace `PCI` with followig improvements. `PCIe` uses serial bus
+technologies where as `PCI` is parallel bus so `PCIe` uses less IO pins which
+reduces the layout complexity thus reduce the board design cost.
 
 image::../images/Timeline of PCIe Interface.png[] 
 
@@ -63,7 +70,10 @@ image::../images/Timeline of PCIe Interface.png[]
 
 === icon:microchip[] PCIe Topology & Components
 
-As you can see in the picture (`Root Complex`) available `root ports` are nothing but `virtual PCI to PCI bridges`. These bridges will be connected to `bus 0` and these bridges will also create new busses to which other PCIe devices are connected.
+As you can see in the picture (`Root Complex`) available `root ports` are
+nothing but `virtual PCI to PCI bridges`. These bridges will be connected to
+`bus 0` and these bridges will also create new busses to which other PCIe
+devices are connected.
 
 image::../images/PCIe Overview.png[width=70%]
 
@@ -84,17 +94,27 @@ image::../images/PCIe Topology.png[width=50%]
 | Component | Description
 
 | Root Complex
-| The `Root Complex` is the PCIe controller present in the SoC. It connects the CPU and memory subsystem to the PCI Express fabric and manages communication with PCIe endpoint devices. It may support multiple Root Ports. In this example, the Root Complex supports **3 Root Ports**, each connecting to an endpoint device or a PCIe switch, forming a PCIe hierarchy.
+| The `Root Complex` is the PCIe controller present in the SoC. It connects the
+CPU and memory subsystem to the PCI Express fabric and manages communication
+with PCIe endpoint devices. It may support multiple Root Ports. In this
+example, the Root Complex supports **3 Root Ports**, each connecting to an
+endpoint device or a PCIe switch, forming a PCIe hierarchy.
 
 | Host Bridge
-| The `Host Bridge` connects the CPU to the PCI Express fabric. It acts as the interface between the processor and the PCIe subsystem.
+| The `Host Bridge` connects the CPU to the PCI Express fabric. It acts as the
+interface between the processor and the PCIe subsystem.
 
 | Root Port
-| `Root ports` are nothing but `virtual PCI to PCI bridges`. A `Root Port` is a port on the Root Complex to which a PCIe Endpoint (a physical device such as NVMe or NIC) or a PCIe Switch (used to fan out multiple devices) can be connected.
-Each Root Complex has a fixed number of Root Ports, which connect the CPU to different parts of the PCIe system.
+| `Root ports` are nothing but `virtual PCI to PCI bridges`. A `Root Port` is a
+port on the Root Complex to which a PCIe Endpoint (a physical device such as
+NVMe or NIC) or a PCIe Switch (used to fan out multiple devices) can be
+connected.
+Each Root Complex has a fixed number of Root Ports, which connect the CPU to
+different parts of the PCIe system.
 
 | PCI-to-PCI Bridge
-| `PCI-to-PCI Bridge` is used to create secondary PCI buses. The secondary bus is typically created via a `pci-bridge`.
+| `PCI-to-PCI Bridge` is used to create secondary PCI buses. The secondary bus
+is typically created via a `pci-bridge`.
 
 |===
 
@@ -115,29 +135,40 @@ image::../images/PCIe Switch.png[width=50%]
 This is how cpu rootcomplex and endpoint devices are communicate with each other.
 
 * Endpoint device will be accessed by CPU via Root Complex.
-* CPU receives the interrupts of all the endpoint devices via Root Complex, Interrupt section is covered later in the document
+* CPU receives the interrupts of all the endpoint devices via Root Complex,
+Interrupt section is covered later in the document
 * Root Complex can also access the memory without use CPU like DMA.
-* End point can access the Host memory directly using Root Complex. To access the memory host system makes end device bus master to give the permission to the endpoint device.
-* PCIe uses point to point topology which means single serial link connect to PCIe device.
-* Each bus also assigned with the bus number during the software configuration which help the ECAM to generate the bus address.
-* These bus numbers are used by switches or bridges etc to do the packet transection.
-* PCIe has its own address space, which can be 32-bit or 64-bit depending on the root complex.
+* End point can access the Host memory directly using Root Complex. To access
+the memory host system makes end device bus master to give the permission to
+the endpoint device.
+* PCIe uses point to point topology which means single serial link connect to
+PCIe device.
+* Each bus also assigned with the bus number during the software configuration
+which help the ECAM to generate the bus address.
+* These bus numbers are used by switches or bridges etc to do the packet
+transection.
+* PCIe has its own address space, which can be 32-bit or 64-bit depending on
+the root complex.
 
 [NOTE]
 --
-PCI address space is visible to the PCIe components like Root complex, endpoints, Switches and bridges etc.
+PCI address space is visible to the PCIe components like Root complex, endpoints,
+Switches and bridges etc.
 --
 
 === icon:plug[] PCI Express PHY Layer
 
 image::../images/PCIe Overview 1.png[width=50%]
 
-PCIe components connect via **Links** made of one or more **Lanes**, where each lane provides a full-duplex serial **Channel** between two **Ports**.
+PCIe components connect via **Links** made of one or more **Lanes**, where each
+lane provides a full-duplex serial **Channel** between two **Ports**.
 
 * **Link**: Collection of two ports and their interconnecting lanes.
-* **Lane**: A set of differential signal pairs: one pair for Tx and another for Rx.
+* **Lane**: A set of differential signal pairs: one pair for Tx and another for
+Rx.
 * **Port**:
-** **Physically**: A group of transmitters and receivers located on the same chip that define a link.
+** **Physically**: A group of transmitters and receivers located on the same
+chip that define a link.
 ** **Logically**: An interface between a component and a PCI Express Link.
 * **x1, x2, x4, x8, x16, ..., xN (Link)**: A by-N link is composed of N lanes.
 
@@ -145,7 +176,8 @@ image::../images/PCIe Overview 2.png[width=50%]
 
 === What changed from PCI to PCIe?
 
-The biggest shift from legacy PCI to PCIe was how devices are connected and communicate.
+The biggest shift from legacy PCI to PCIe was how devices are connected and
+communicate.
 
 * Legacy PCI used a shared bus.
 * PCIe uses point-to-point links.
@@ -214,19 +246,28 @@ image::../images/Legacy PCI Overview.png[width=50%]
 
 === PCI Components
 
-so when we are taking about PCIe we should also take about PCI bus device components:
+so when we are taking about PCIe we should also take about PCI bus device
+components:
 
 * Host bridge
 * PCI bridge
 * PCI device
 
-During this series we will be using qemu to explain the PCIe topology and also capturing the i.MX6 PCIe topology.
+During this series we will be using qemu to explain the PCIe topology and also
+ capturing the i.MX6 PCIe topology.
 
 [[explore-the-pcie-hierarchy-using-lspci-output]]
 == QEMU: Explore the PCIe Hierarchy using lspci output
 
-Major change in PCIe from legacy PCI is the change from a true bus topology to a point-to-point link. We can take an example of network device to understand this(change from Hub to Switch). Each link is a  point to point link that is routed just like an Ethernet cord on a packet-switched Ethernet network. Instead of L3 packets, PCIe uses TLPs (Transaction Layer Protocol) to transfer data.
-That means PCIe is not a bus protocol. here `bus` means multiple devices are talking on the same physical link. TLP packet are routed over the toplogy to find out the correct destination. we will uderstand this in details in next sections.
+Major change in PCIe from legacy PCI is the change from a true bus topology to
+a point-to-point link. We can take an example of network device to understand
+this(change from Hub to Switch). Each link is a point to point link that is
+routed just like an Ethernet cord on a packet-switched Ethernet network. Instead
+of L3 packets, PCIe uses TLPs (Transaction Layer Protocol) to transfer data.
+That means PCIe is not a bus protocol. here `bus` means multiple devices are
+talking on the same physical link. TLP packet are routed over the toplogy to
+find out the correct destination. we will uderstand this in details in next
+sections.
 
 ```bash
 256 buses × 32 devices × 8 functions = 65,536 functions
@@ -247,19 +288,33 @@ root@playground-arm64:~# lspci -tv
 * Communication is packet-based.
 * Multiple devices can transmit simultaneously without contention.
 
-PCI devices are identified by a **Bus/Device/Function (BDF)** address. Busses are numbered 0–255, while Device and Function IDs specify the exact component.
+PCI devices are identified by a **Bus/Device/Function (BDF)** address. Busses
+are numbered 0–255, while Device and Function IDs specify the exact component.
 
 image::../images/PCIe Hierarchy.png[width=100%]
 
-In the illustration above, we can see multiple `PCIe/PCI devices` and `root port` connected to the `Root Complex`. There can be mutiple `Root ports` which are physically supported by the `Root Complex`. 
+In the illustration above, we can see multiple `PCIe/PCI devices` and `root port`
+connected to the `Root Complex`. There can be mutiple `Root ports` which are
+physically supported by the `Root Complex`. 
 
-This output illustrates the PCIe topology of the QEMU machine. The `QEMU PCIe Host bridge` (at `00.0`) represents the Root Complex, which is logically integrated into the CPU silicon and serves as the host interface for all PCIe communication. In the following sections, we will explore how to expand this topology by adding new devices.
+This output illustrates the PCIe topology of the QEMU machine. The `QEMU PCIe
+Host bridge` (at `00.0`) represents the Root Complex, which is logically
+integrated into the CPU silicon and serves as the host interface for all PCIe
+communication. In the following sections, we will explore how to expand this
+topology by adding new devices.
 
-Some root ports are connected to `PCIe switch` and some are connected to `PCIe endpoint` directly. We will cover this in **Exploring PCIe with QEMU**.
+Some root ports are connected to `PCIe switch` and some are connected to `PCIe
+endpoint` directly. We will cover this in **Exploring PCIe with QEMU**.
 
-Bus 0 is physically integrated into the CPU silicon. Devices connected to this bus reside within the processor package and communicate via proprietary, high-speed internal interconnects. While these interconnects use vendor-specific protocols, they are logically presented to the system using the PCIe protocol. These specialized devices are known as **Root Complex Integrated Endpoints (RCIE)** because they are integrated directly into the Root Complex.
+Bus 0 is physically integrated into the CPU silicon. Devices connected to this
+bus reside within the processor package and communicate via proprietary,
+high-speed internal interconnects. While these interconnects use vendor-specific
+protocols, they are logically presented to the system using the PCIe protocol.
+These specialized devices are known as **Root Complex Integrated Endpoints
+(RCIE)** because they are integrated directly into the Root Complex.
 
-Below output is from the QEMU bu tit still shows the **Root Complex Integrated Endpoints (RCIE)**
+Below output is from the QEMU bu tit still shows the **Root Complex Integrated
+Endpoints (RCIE)**
 
 ```bash
 00:04.0 USB controller: Red Hat, Inc. QEMU XHCI Host Controller (rev 01) (prog-if 30 [XHCI])
@@ -297,29 +352,40 @@ Below output is from the QEMU bu tit still shows the **Root Complex Integrated E
 There are two types of PCI Express Port: 
 
 * The `Root Port` and the `Switch Port`.
-* The `Root Port` originates a PCI Express link from a PCI Express Root Complex and the `Switch Port` connects PCI Express links to internal logical PCI buses.
-* The `Switch Port`, which has its secondary bus representing the switch's internal routing logic, is called the switch's Upstream Port. The switch's Downstream Port is bridging from switch's internal routing bus to a bus representing the downstream PCI Express link from the `PCI Express Switch`.
+* The `Root Port` originates a PCI Express link from a PCI Express Root Complex
+  and the `Switch Port` connects PCI Express links to internal logical PCI
+  buses.
+* The `Switch Port`, which has its secondary bus representing the switch's
+  internal routing logic, is called the switch's Upstream Port. The switch's
+  Downstream Port is bridging from switch's internal routing bus to a bus
+  representing the downstream PCI Express link from the `PCI Express Switch`.
 
 We will cover both the usecases here:
 
 1. Connect minimal-pcie-nic to pcie-root-port(pci bridge connected to bus 0).
-2. Connect PCIe switch to pcie-root-port(pci bridge connected to bus 0) and then connect minimal-pcie-nic to downstream ports of switch.
+2. Connect PCIe switch to pcie-root-port(pci bridge connected to bus 0) and then
+connect minimal-pcie-nic to downstream ports of switch.
 
-these two senario will help us understand how PCIe topology is created in qemu ad we will be using it in further discussions.
+these two senario will help us understand how PCIe topology is created in qemu
+and we will be using it in further discussions.
 
 Some of the key points to remember:
 
-* QEMU does not have a clear socket-device matching mechanism and allows any PCI/PCI Express device to be plugged into any PCI/PCI Express slot.
+* QEMU does not have a clear socket-device matching mechanism and allows any
+  PCI/PCI Express device to be plugged into any PCI/PCI Express slot.
 * Avoid mixing hierarchies:
 ** PCI devices in PCIe slots may fail.
 ** PCIe devices in PCI slots lose access to the Extended Configuration Space.
-* **Best Practice:** Connect PCIe devices only to PCIe Root Ports or Downstream Ports.
+* **Best Practice:** Connect PCIe devices only to PCIe Root Ports or Downstream
+  Ports.
 
-We need to understand the Root Bus (pcie.0) to understand how PCIe topology is created in qemu.
+We need to understand the Root Bus (pcie.0) to understand how PCIe topology is
+created in qemu.
 
 === Root Bus (pcie.0)
 
-These points are copied for kernel documentation as-is. I want to keep it here for reference.
+These points are copied for kernel documentation as-is. I want to keep it here
+for reference.
 
 Place only the following kinds of devices directly on the Root Complex:
 
@@ -355,7 +421,8 @@ Place only the following kinds of devices directly on the Root Complex:
 [[connect-minimal-pcie-nic-to-pcie-root-port-pci-bridge-connected-to-bus-0]]
 === Connect minimal-pcie-nic to pcie-root-port(pci bridge connected to bus 0)
 
-* Connect `minimal-pcie-nic` to `pcie-root-port`. Create root port at address `06.0` name it `rp2`.
+* Connect `minimal-pcie-nic` to `pcie-root-port`. Create root port at
+  address `06.0` name it `rp2`.
 Use rp2 to connect the `minimal-pcie-nic`.
 
 ```bash
@@ -395,7 +462,9 @@ image::../images/PCIe Root Port.png[width=100%]
 [[connect-pcie-switch-to-pcie-root-port-pci-bridge-connected-to-bus-0-and-then-connect-minimal-pcie-nic-to-downstream-ports-of-switch]]
 === Connect PCIe switch to pcie-root-port(pci bridge connected to bus 0)and then connect minimal-pcie-nic to downstream ports of switch
 
-Here is the command to create `root port`, `upstream port` and `downstream ports` and connect minimal-pcie-nic to downstream ports of switch and connect upstream port to root port
+Here is the command to create `root port`, `upstream port` and `downstream ports`
+and connect minimal-pcie-nic to downstream ports of switch and connect upstream
+port to root port
 
 ```bash
 runqemu playground-arm64 nographic slirp \
@@ -432,12 +501,14 @@ image::../images/QEMU PCIe Switch.png[width=100%]
 
 [IMPORTANT]
 --
-This is enough to get the idea about how bus device and functions are created in PCIe topology.
+This is enough to get the idea about how bus device and functions are created in
+PCIe topology.
 --
 
 == Type 0 and Type 1 Configurations Space
 
-`Endpoints` referred to as `Type 0` devices, and `Switch` (or a `Bridge`) referred to as `Type 1` devices.
+`Endpoints` referred to as `Type 0` devices, and `Switch` (or a `Bridge`)
+referred to as `Type 1` devices.
 
 * Type 1 headers for Root Complex, switches, and bridges.
 
@@ -448,11 +519,13 @@ image::../images/PCIE-Type0.png[width=50%]
 image::../images/PCIe-Type1.png[width=50%]
 
 * There are two ways to access the configuration space.
-** *PCI-Compatible Configuration Access:* PCI-Compatible configuration method can only access 256byte (PCI
-standard) .Using Configuration Address Port 0xCF8h and data port 0xCFCh
+** *PCI-Compatible Configuration Access:* PCI-Compatible configuration method
+   can only access 256byte (PCI standard) .Using Configuration Address Port
+   0xCF8h and data port 0xCFCh
 
-** *PCIE-Compatible Configuration Access:* PCIe-Compatible Configuration Method uses ECAM address. Using this
-method user can access 4KB of Configuration space.
+** *PCIE-Compatible Configuration Access:* PCIe-Compatible Configuration Method
+   uses ECAM address. Using this method user can access 4KB of Configuration
+   space.
 
 == ECAM QEMU Example
 We are taking an example here to understand the **ECAM**
@@ -476,7 +549,8 @@ root@playground-arm64:~# cat /proc/iomem |grep ECAM
 root@playground-arm64:~#
 ```
 
-* Now let say we want to read the vendor id of `04:00.0  Red Hat, Inc. Device 10f`. This requires some calculations.
+* Now let say we want to read the vendor id of `04:00.0  Red Hat, Inc. Device 10f`.
+This requires some calculations.
 
 ```bash
 | 27 - 20 | 19 - 15 | 14 - 12     |  11 - 0       |
@@ -516,7 +590,8 @@ root@playground-arm64:~#
 
 == ECAM i.MX6 Example
 
-* First we should know about the Memory map of i.MX6. This info can be easily derived from the device tree.
+* First we should know about the Memory map of i.MX6. This info can be easily
+derived from the device tree.
 
 ```bash
 DBI             : start addr = 0x01ffc000 - end addr = 0x1ffffff - size = 0x4000 (16KB)
@@ -534,8 +609,8 @@ with their device driver running in the Linux kernel on CPU.
 * This memory segment is used to map the configuration space of PCIe RC. SW
 can access PCIe RC core configuration space through the DBI interface.
 * PCIe device configuration space.
-* Used to map the configuration spaces of PCIe EP devices that are inserted to the
-RC downstream port.
+* Used to map the configuration spaces of PCIe EP devices that are inserted to
+the RC downstream port.
 
 * lspci dump
 
@@ -561,7 +636,8 @@ Device: 01:00.0 → Bus 1, Device 0, Function 0
 >>>
 ```
 
-* In i.MX6, ECAM space starts at `0x01f00000` and it maps all the endpoint device configuration space.
+* In i.MX6, ECAM space starts at `0x01f00000` and it maps all the
+  endpoint's configuration space.
 
 ----
 ECAM cpu address -> translate to -> pci address + ecam_offset
@@ -569,7 +645,8 @@ ECAM cpu address -> translate to -> pci address + ecam_offset
 0x01f00000 -> 0x1000000
 ----
 
-* Lets try to read the `0x1f00000`. We should get vendor and device id of EP `01:00.0`
+* Lets try to read the `0x1f00000`. We should get vendor and device id of EP
+`01:00.0`
 ----
 $ devmem2 0x1f00000
  0x002B168C
@@ -585,16 +662,23 @@ This section explains the address space used by PCI transections.
 
 * Left is the SOC which has the root complex IP.
 * Right we have PCIe express endpoint.
-* Host system can access the PCIe endpoint only using this PCIe address space. This PCIe address space is a virtual address space which is used by PCIe devices.
-* PCIE address space is just a list of address used in the transection layer packet in order to identify the target of the transection.
-* IP Registers: registers to enable the clock, program the PHY, configure lane width, configure the speed, registers to program the address translation unit.
+* Host system can access the PCIe endpoint only using this PCIe address space.
+This PCIe address space is a virtual address space which is used by PCIe devices.
+* PCIE address space is just a list of address used in the transection layer
+packet in order to identify the target of the transection.
+* IP Registers: registers to enable the clock, program the PHY, configure
+  lane width, configure the speed, registers to program the address translation
+  unit.
 
 [NOTE]
-ATUs are programmed to convert the CPU address to PCI address.`0x01f00000` mapped to `0x1000000` using Outbound ATU configuration.
+ATUs are programmed to convert the CPU address to PCI address.`0x01f00000`
+mapped to `0x1000000` using Outbound ATU configuration.
 
 **Lets briefly cover the ATUs**
 
-ATUs are programmed to convert the CPU address to PCI address. CPU address is the location on the physical memory map and PCI address is the address which Root Comples uses to generate the TLP to access the configuration space.
+ATUs are programmed to convert the CPU address to PCI address. CPU address is
+the location on the physical memory map and PCI address is the address which Root
+Comples uses to generate the TLP to access the configuration space.
 
 * Here is i.MX6 ATU configuration
 
@@ -629,25 +713,38 @@ root@imx6dl:~#
 
 == Understand PCIe from memory point of view
 
-It s not easy to create a picture in mind that what is happening when we iniate Configurations read or write request and Memory read or write request.I am trying to write it in a way that it will be easy to understand.
+It s not easy to create a picture in mind that what is happening when we iniate
+Configurations read or write request and Memory read or write request.I am
+trying to write it in a way that it will be easy to understand.
 
 We will create a mapping of following.
 
-* CPU Address Space: This is the physical address space of the CPU(which CPU understands) and create virtual memory mapping when accessing it from Driver(kernel space).
-* PCIe Address Space: This is the virtual address space used by PCIe devices. This space if only understood by Root Complex and PCIe Device.
+* CPU Address Space: This is the physical address space of the CPU(which CPU
+understands) and create virtual memory mapping when accessing it from
+Driver(kernel space).
+* PCIe Address Space: This is the virtual address space used by PCIe devices.
+This space if only understood by Root Complex and PCIe Device.
 * RAM: This is the physical memory space.
 * MMIO: This is the memory mapped I/O space.
 
-A typical system maps virtual memory to physical memory across distinct regions for RAM and PCI devices. Due to the 32-bit addressing limitations of older PCI devices, memory is often split:
+A typical system maps virtual memory to physical memory across distinct regions
+for RAM and PCI devices. Due to the 32-bit addressing limitations of older PCI
+devices, memory is often split:
 
-* **32-bit Windows (Below 4GB):** A constrained space for legacy devices. RAM or PCI resources are moved above 4GB if they exceed this window.
-* **64-bit Windows (Above 4GB):** A second window for modern devices that support 64-bit addressing. 
+* **32-bit Windows (Below 4GB):** A constrained space for legacy devices. RAM
+or PCI resources are moved above 4GB if they exceed this window.
+* **64-bit Windows (Above 4GB):** A second window for modern devices that
+support 64-bit addressing.
 
-Since modern processors support 64-bit addresses, they can access both regions seamlessly. It is generally preferred to move as much device memory as possible above the 4GB line to avoid cluttering the limited 32-bit address space.
+Since modern processors support 64-bit addresses, they can access both regions
+seamlessly. It is generally preferred to move as much device memory as possible
+above the 4GB line to avoid cluttering the limited 32-bit address space.
 
 This is the high level picture:
 
-When the CPU performs a read or write operation to an address within the PCI memory region, the Root Complex automatically generates a Transaction Layer Packet (TLP) and transmits it to the PCIe device.
+When the CPU performs a read or write operation to an address within the PCI
+memory region, the Root Complex automatically generates a Transaction Layer
+Packet (TLP) and transmits it to the PCIe device.
 
 image::../images/Physical-to-Virtual-mapping.png[width=50%]
 
@@ -672,9 +769,14 @@ Let’s travers the read config path from root complex to pcie device.
 
 image::../images/PCIe-Config-Read.png[width=100%]
 
-1. Some code (Let say PCIe NIC driver) wants to read the Vendor ID register of the PCIe device. Drive can either use predefined pcie_config_read32() or pcie_config_read16() or pcie_config_read8() function or it can directly access the ECAM virtual mapping. By creating a virtual mapping of ECAM space.
+1. Some code (Let say PCIe NIC driver) wants to read the Vendor ID register
+of the PCIe device. Drive can either use predefined
+`pcie_config_read32()` or `pcie_config_read16()` or `pcie_config_read8()`
+function or it can directly access the ECAM virtual mapping. By creating a
+virtual mapping of ECAM space.
 2. When driver initate the read. it ti traslated to physical ecam address.
-3. Read on this address casues the root complex to generate a configuration TLP and send it through the hierarchy.
+3. Read on this address casues the root complex to generate a configuration TLP
+and send it through the hierarchy.
 4. TLP packet looks like this. This packet we captured using PCIe trace.
 
 image::../images/ConfigReadType0-0.png[width=120%]
@@ -682,13 +784,22 @@ image::../images/ConfigReadType0-0.png[width=120%]
 image::../images/ConfigReadType0-1.png[width=120%]
 
 [NOTE]
-Format of TLP packet is explained later. For now we check that Requested ID is `00 00` which means it is coming from Root Complex and Completer ID is `01 00` which means it is going to Bus 1 Device 0 Function 0. Register Offset is `0x00` which means it is going to Vendor ID register.
+Format of TLP packet is explained later. For now we check that Requested ID is
+`00 00` which means it is coming from Root Complex and Completer ID is `01
+00` which means it is going to Bus 1 Device 0 Function 0. Register Offset
+is `0x00` which means it is going to Vendor ID register.
 
-5.The TLP is received by endpoint on Bus 1 and sees that it is a configuration space TLP. It now knows to respond with a configuration space response TLP that contains the contents of the value at offset 0x0.
+5.The TLP is received by endpoint on Bus 1 and sees that it is a configuration
+space TLP. It now knows to respond with a configuration space response TLP that
+contains the contents of the value at offset 0x0.
 
 === Respose of Config Read
 
-The device responds with a special TLP containing the value at offset 0 (which we know is the Vendor ID). That packet makes its way back to the Requester (which was the Root Complex) and the interconnect informs the CPU to update the value to the value of 0x8680 which is the vendor ID of the Intel wifi card. Below if the response TLP.
+The device responds with a special TLP containing the value at offset 0 (which
+we know is the Vendor ID). That packet makes its way back to the Requester
+(which was the Root Complex) and the interconnect informs the CPU to update the
+value to the value of 0x8680 which is the vendor ID of the Intel wifi card.
+Below if the response TLP.
 
 image::../images/ConfigReadType0-2.png[width=120%]
 
@@ -696,25 +807,43 @@ image::../images/ConfigReadType0-3.png[width=120%]
 
 == Data Transfer in PCIe
 
-`Configuration space` serves as the primary mechanism for device communication via BDF during the enumeration process(LTSSM). This simplified transfer mode is essential for establishing the parameters required for all subsequent data transfer methods(link, lane, MSS, etc). Following enumeration, the configuration space contains the settings necessary for the device to perform its intended tasks alongside the host. Although it continues to be used for monitoring device status and link state, it is not utilized for high-speed data throughput or primary device operations.
+`Configuration space` serves as the primary mechanism for device communication
+via BDF during the enumeration process(LTSSM). This simplified transfer mode is
+essential for establishing the parameters required for all subsequent data
+transfer methods(link, lane, MSS, etc). Following enumeration, the configuration
+space contains the settings necessary for the device to perform its intended
+tasks alongside the host. Although it continues to be used for monitoring device
+status and link state, it is not utilized for high-speed data throughput or
+primary
+device operations.
 
-Lets talk about data transfer which is actualy using `high speed` PCIe capabilities or implementation.
+Lets talk about data transfer which is actualy using `high speed` PCIe
+capabilities or implementation.
 
 **What is BAR?**
 
-We have already used this term in above sections. Lets dig more deeper and understand what is BAR and how Rootcomplex is using it to map the memory space of a PCIe device to the memory space of the CPU(MMIO).
+We have already used this term in above sections. Lets dig more deeper and
+understand what is BAR and how Rootcomplex is using it to map the memory space
+of a PCIe device to the memory space of the CPU(MMIO).
 
-`Base Address Register (BAR)` is a 32-bit or 64-bit register that is used to map the memory space of a PCIe device to the memory space of the CPU.
+`Base Address Register (BAR)` is a 32-bit or 64-bit register that is used to
+map the memory space of a PCIe device to the memory space of the CPU.
 
 === Steps to map the endpoint device memory space to the CPU memory space
 
-Memory space cannot be accessed in the same way as configuration space because the size of the memory space varies between devices. Therefore, the host system must first determine the size of the memory space required by the endpoint.
+Memory space cannot be accessed in the same way as configuration space because
+the size of the memory space varies between devices. Therefore, the host system
+must first determine the size of the memory space required by the endpoint.
 
-* To determine the size, the host system uses the **Base Address Registers (BARs)** located in the configuration space header.
+* To determine the size, the host system uses the
+  **Base Address Registers (BARs)** located in the configuration space header.
 * BARs can be utilized for both Memory and I/O space mapping.
-* **Bit 0:** Indicates whether the endpoint requires `Memory space` (0) or `I/O space` (1).
-* **Bits 1-2:** Describe if the PCIe endpoint supports `32-bit address decoding` or `64-bit address decoding`.
-* **Bit 3:** Indicates whether the memory space is `prefetchable` or `non-prefetchable`.
+* **Bit 0:** Indicates whether the endpoint requires `Memory space` (0) or
+  `I/O space` (1).
+* **Bits 1-2:** Describe if the PCIe endpoint supports `32-bit address
+  decoding` or `64-bit address decoding`.
+* **Bit 3:** Indicates whether the memory space is `prefetchable` or
+  `non-prefetchable`.
 
 image::../images/BAR-Register.png[width=50%]
 
@@ -723,7 +852,8 @@ image::../images/BAR-Register.png[width=50%]
 To determine the size of the memory space, the host system follows these steps:
 
 . **Write all 1's** to the BAR register.
-. **Read back** the BAR register. The endpoint will respond with a value where the lower bits (which are read-only) remain unchanged.
+. **Read back** the BAR register. The endpoint will respond with a value where
+  the lower bits (which are read-only) remain unchanged.
 . **Clear the last 4 bits** (control bits).
 . **Invert** the bits.
 . **Add 1**.
@@ -734,20 +864,33 @@ image::../images/BAR-Register-1.png[width=20%]
 
 In the given example, the endpoint has requested a memory space of 1MB.
 
-* Once the host system gets the size of the memory space, it will allocate the same size of memory in the configurable address space (in the dedicated memory space region).
+* Once the host system gets the size of the memory space, it will allocate
+  the same size of memory in the configurable address space (in the dedicated
+  memory space region).
 * This will then be used to access the memory of the PCIe express endpoint.
-* The system will allocate 1MB of memory in the dedicated memory space given for the Root Complex.
+* The system will allocate 1MB of memory in the dedicated memory space given for
+  the Root Complex.
 
 **ATMU configuration for Memory transection**
 
-As per the given figure, we program the source address (for example, 'C' in the PCIe Memory space) to address 'C' in the PCIe address space.
+As per the given figure, we program the source address (for example, 'C' in the
+PCIe Memory space) to address 'C' in the PCIe address space.
 
-* The source address is "C", the destination address is "C", and the size is 256MB as we are translating the complete address space. The type is MEM.
-* Since we are mapping the entire Memory Space available for the Root Complex to the PCIe address space with type as MEM, we avoid performing address translation for each individual device.
-* Whenever the CPU accesses this particular region in the configurable address space, the Root Complex will access this region in the PCIe address space based on the ATMU.
-* Currently, the PCIe endpoint will not respond to the memory transaction because the PCIe address space is not yet mapped to the endpoint BARs.
-* We will program the BAR registers with the PCIe address space to which the memory is mapped.
-* In the Endpoint configuration space, address "X" is programmed to map the endpoint memory to the PCIe address space.
+* The source address is "C", the destination address is "C", and the size
+  is 256MB as we are translating the complete address space. The type is
+  MEM.
+* Since we are mapping the entire Memory Space available for the Root Complex
+  to the PCIe address space with type as MEM, we avoid performing address
+  translation for each individual device.
+* Whenever the CPU accesses this particular region in the configurable
+  address space, the Root Complex will access this region in the PCIe address
+  space based on the ATMU.
+* Currently, the PCIe endpoint will not respond to the memory transaction
+  because the PCIe address space is not yet mapped to the endpoint BARs.
+* We will program the BAR registers with the PCIe address space to which
+  the memory is mapped.
+* In the Endpoint configuration space, address "X" is programmed to map
+  the endpoint memory to the PCIe address space.
 
 image::../images/ATMU-configuration-for-mem.png[width=100%]
 
@@ -814,16 +957,15 @@ root@imx6dl:~#
 
 * Less number of IO lines compare to PCI.
 * Uses pair of differential RX lines and pair of differential TX lines.
-* Given figure shows two lane card design as it shows two pair of differential RX lines and two pair of differential RX lines.
+* Given figure shows two lane card design as it shows two pair of differential
+  RX lines and two pair of differential RX lines.
 * PRESET# tells when the voltage and clock signals are stable.
 * PRSNT1# and PRSNT2# used for hot plug.
 * PCIe doesn't uses dedicated IRQ lines unlike PCI which has 4 IRQ lines.
-* PCIe uses in band signalling even for interrupt and it will be all transmitted using this differential TX and RX lines.
+* PCIe uses in band signalling even for interrupt and it will be all
+  transmitted using this differential TX and RX lines.
 
 image::../images/PCIe-IO-Lines.png[]
-
-
-
 
 * `TBD`
 
