@@ -75,7 +75,7 @@ nothing but `virtual PCI to PCI bridges`. These bridges will be connected to
 `bus 0` and these bridges will also create new busses to which other PCIe
 devices are connected.
 
-image::../images/PCIe Overview.png[width=70%]
+image::../images/PCIe-Topology.png[width=100%]
 
 Given picture shows 3 root ports:
 
@@ -255,6 +255,38 @@ components:
 
 During this series we will be using qemu to explain the PCIe topology and also
  capturing the i.MX6 PCIe topology.
+
+== PCIe Device Representation and Enumeration
+
+image::../images/PCIe-Bus-Device-Function.png[width=50%]
+
+* `BDF` (Bus:Device:Function) : Unique address assigned to every PCIe device.
+* `BDF` is the routing id used to access the configuration space access.
+* `Bus` - 8 bits, `Device` - 5 bits, `Function` - 3 bits
+* `Enumeration`: `TLP` is sent to check if device is present using
+  `bus:device:function` and if `completion` packet is received that means
+  device is present and now proceed with reading device information. If it
+  returns “FF” that means there is not device with `B.D.F` couple. This is how
+  enumeration works. It uses `Depth First Search` Algo.
+
+image::../images/PCIe-Bus-Device-Function-lspci.png[width=80%]
+
+== lspci Utility
+
+* `lspci` utility is used to display the information about PCI devices connected
+  to the system.
+
+* `lspci -vv` : `lspci` shows detailed information of each PCI device.
+
+* `lspci -t` : `lspci` shows the tree view of the PCI devices.
+
+* `lspci -tv` : `lspci` shows the tree view of the PCI devices and also shows
+verbose output.
+
+* `lspci -tvv` : `lspci` shows the tree view of the PCI devices and also shows
+very verbose output.
+
+image::../images/PCIe-lspci-utility.png[width=100%]
 
 [[explore-the-pcie-hierarchy-using-lspci-output]]
 == QEMU: Explore the PCIe Hierarchy using lspci output
@@ -505,7 +537,120 @@ This is enough to get the idea about how bus device and functions are created in
 PCIe topology.
 --
 
+== PCIe Protocol Layers
+
+* **Transection Layer Packet (TLP)**
+** It turns user application data into PCIe transaction (TLP).
+** Assembly, disassembly and basic error checking of TLP packets.
+** Memory Read/Write, Configuration Read/Write, Message and IO Read/Write.
+* **Data Link Layer(DLL)**
+** Reliable transport of TLPs and It’s done by using DLL packets:
+** ACK/NAK of transection layer packets.
+** Flow Control- Handle buffer overflow and Link CRC
+* **Physical Layer**
+** Append Start and End symbol
+** Runs the LTSSM: Link Initialisation and Training: Speed, Link width, Lane
+Reversal and polarity is negotiated and initialised (LTSSM)
+
+image::../images/pcie-protocol-stack.png[width=50%]
+
+=== Packet Captures and Analysis
+
+image::../images/pcie-packet-capture-example.png[width=200%]
+
+=== PCIe Transection layer Packets
+
+A Transaction Layer Packet (TLP)
+
+* Access the MEM or CFG space via requests and completions.
+* The three identified types of TLP:
+** **Posted** – Requests for which no completion response is expected.
+** **Non-Posted** – Requests for which a completion response is expected.
+** **Completion** – A packet sent in response to an earlier request packet.
+* All Transaction Layer Packets (TLPs) defined by PCIe can be grouped into these
+  three types.
+* Of these TLP types most are non-posted, whilst just memory writes and
+  messages are posted
+
+image::../images/pcie-tlp-packet-type.png[width=50%]
+
+* ** PCIe TLP Header Format **
+
+image::../images/pcie-tlp-hdr-2.png[width=100%]
+
+image::../images/pcie-tlp-hdr-1.png[width=100%]
+
+==== PCIe Transection layer Packet - Memory Read
+
+*MRd - Memory Read (32/64-bit)*
+
+RC requests the Endpoint to return data from a memory address. No payload. A
+Completion with Data (CplD) is returned by the completer.
+
+* **FMT+Type:** 001 00000 (64-bit addr, no data). For 32-bit addr use
+  FMT=000.
+* **Length:** Number of DWORDs requested (e.g. 0x001 = 4 bytes, 0x010 = 16
+  bytes). But no Data payload.
+* **Requester ID + Tag:** Used by completer to route the CplD back correctly.
+
+image::../images/pcie-tlp-memory-read.png[width=100%]
+
+==== PCIe Transection layer Packet - Memory Write
+
+*MWr - Memory Write (32/64-bit)*-Writes data to a target memory address. This is a
+posted transaction — no completion is returned.
+
+* **FMT+Type:** 011 00000 (64-bit write with data). 32-bit: FMT=010.
+* **Length:** Size of data payload in DWORDs. Max 1024 DWORDs (4KB) per TLP.
+* **No Tag needed** for completion matching since writes are posted.
+
+image::../images/pcie-tlp-memory-write.png[width=100%]
+
+==== PCIe Transection layer Packet - Completion with data
+
+*CplD- Completer with Data*
+
+Sent by a completer in response to a Non-Posted request (MRd, IORd, CfgRd,
+AtomicOp). Carries the requested data back to the requester.
+
+* **Completer ID:** 01:00.0 of the device returning data.
+* **Status [2:0]:** 000=SC (Successful Completion), 001=UR (Unsupported
+Request)010=CRS, 100=CA (Completer Abort).
+* **Byte Count [11:0]:** Total bytes remaining across all completions for this
+split transaction. Due to Max payload size similar to MTU
+* **Requester ID + Tag:** Copied from original request — used to route the data
+  back.
+
+image::../images/pcie-tlp-completion-with-data.png[width=100%]
+
+==== PCIe Transection layer Packet - completion without data
+
+* **Cpl - Completion without Data**
+** Completion for Non-Posted requests that don't return data — specifically I/O
+   Writes and Config Writes, or when a completer needs to signal an error (UR/CA).
+** Status field: Critical here. Carries UR (Unsupported Request) or CA (Completer
+   Abort) to signal errors back to the requester.
+
+image::../images/pcie-tlp-completion-without-data.png[width=100%] 
+
 == Type 0 and Type 1 Configurations Space
+
+* **PCIe Configuration Space** - It is a standard memory space associated
+  with every PCIe device.
+
+* **PCIe Root Complex** enumerates all PCIe devices by reading each device's
+  configuration space to discover:
+  ** Who made the device (Vendor ID)
+  ** What kind of device it is (Device ID, Class Code)
+  ** What resources it needs (BARs)
+  ** What capabilities it supports (MSI, MSI-X, PCIe features, Power Management,
+     etc.)
+
+* **4K Configuration Space:** The first 256 bytes are compatible with legacy
+  PCI, while the remaining space is called the Extended Configuration Space.
+* **Two type of configuration space :**
+  ** Type 0: Endpoint devices
+  ** Type 1: Switch(or a Bridge). 
 
 `Endpoints` referred to as `Type 0` devices, and `Switch` (or a `Bridge`)
 referred to as `Type 1` devices.
@@ -527,7 +672,25 @@ image::../images/PCIe-Type1.png[width=50%]
    uses ECAM address. Using this method user can access 4KB of Configuration
    space.
 
-== ECAM QEMU Example
+== ECAM
+
+ECAM (**Enhanced Configuration Access Mechanism**) is the standard PCIe
+method used by the CPU to access a device's 4 KB configuration space through
+memory-mapped addresses. Legacy PCI configuration space was accessed using
+special I/O ports 0xCF8 and 0xCFC .
+
+PCIe introduced ECAM so that configuration space can be accessed like normal
+memory.
+
+image::../images/pcie-ecam.png[width=100%]
+
+* Total 256 devices per segment . 
+** Each device can have 8 functions.
+** Each function can have 256 bytes.
+
+image::../images/pcie-ecam-1.png[width=70%]
+
+=== ECAM QEMU Example
 We are taking an example here to understand the **ECAM**
 
 ```lspic
@@ -656,7 +819,7 @@ $ root@imx6dl:~# lspci -s 01:00.0 -x
 00: 8c 16 2b 00 ....
 ----
 
-image::../images/PCIe Address Space.png[width=100%]
+image::../images/pcie-address-space-1.png[width=100%]
 
 This section explains the address space used by PCI transections.
 
@@ -710,6 +873,56 @@ root@imx6dl:~#
 ```
 
 *Refer i.MX6dl reference manual for register details**
+
+== PCIe - Everything is Memory
+
+Before we dive into **PCIe Address Space**, let's first understand the **MMIO**.
+
+In the early days, **I/O** was handled through **special I/O instructions**
+(like `IN`, `OUT` in x86). However, with the evolution of processors, it became
+clearer that using memory-mapped I/O (**MMIO**) was a much more efficient and
+easier way to handle device access.
+
+* **PCIe** - All the communication happens through memory reads and writes.
+* **Device memory** is accessed via **MMIO**
+* **Way of interfacing peripherals with CPU.**
+* **Peripheral and external devices are represented as memory.**
+* So **CPU** uses **MMIO(Memory Mapped IO)** to access the PCIe Endpoint
+  Configuration Space, Internal memory, internal control registers.
+
+* **MMIO** - **Memory Mapped Input Output** is an addressing technique that
+  allows the CPU to access hardware devices and their registers using the same
+  addressing mechanisms that it uses for main memory.
+* In the context of PCIe, MMIO allows the CPU to read from and write to the
+  configuration space and device registers using standard memory access
+  instructions.
+* MMIO is implemented by mapping the device registers and memory into the
+  CPU's physical address space. When the CPU accesses an address in the MMIO
+  range, the memory controller redirects the request to the appropriate device.
+  This is used to access the configuration space, which contains information
+  about the device and its capabilities. It is also used to access the device
+  registers, which are used to control the device and its operations.
+
+image::../images/pcie-mmio-1.png[width=50%]
+image::../images/pcie-mmio-2.png[width=50%]
+
+== PCIe Address Space
+
+* **Configuration Space:** Device Identification and Control registers.
+  Associated with every PCIe device.
+* **Memory Space:** This is the primary way the host CPU interacts with the
+  device's internal registers and local device memory (e.g., VRAM on a GPU)
+* **I/O Space:** A legacy address space originally designed for older peripherals
+
+image::../images/pcie-address-space.png[width=50%]
+
+* **Physical/CPU address space** - this is the system memory map addresses which
+  CPU can directly access. In this case CPU can directly access the DRAM (main
+  memory).
+* **PCIe address space** - This is virtual address space not associated to physical
+  memory. It is local to PCI bus.
+
+image::../images/pcie-address-space-2.png[width=100%]
 
 == Understand PCIe from memory point of view
 
@@ -767,17 +980,34 @@ root@playground-arm64:~#
 
 Let’s travers the read config path from root complex to pcie device.
 
-image::../images/PCIe-Config-Read.png[width=100%]
+** Read **
+image::../images/pcie-config-read-1.png[width=100%]
 
-1. Some code (Let say PCIe NIC driver) wants to read the Vendor ID register
-of the PCIe device. Drive can either use predefined
-`pcie_config_read32()` or `pcie_config_read16()` or `pcie_config_read8()`
-function or it can directly access the ECAM virtual mapping. By creating a
-virtual mapping of ECAM space.
-2. When driver initate the read. it ti traslated to physical ecam address.
-3. Read on this address casues the root complex to generate a configuration TLP
-and send it through the hierarchy.
-4. TLP packet looks like this. This packet we captured using PCIe trace.
+1. SCSI Driver calls  `pci_read_config()` to read the endpoint configuration
+   space register using ECAM. 
+2. The virtual mapping is translated by the page tables of the CPU into a
+   physical address into ECAM.
+3. The physical address is read, causing an operation to happen in the internal
+   CPU Interconnect to inform the Root Complex of the access.
+4. The Root Complex generates a packetised version of the request as a TLP
+   that says “Read the value at offset 0x0 for device 00:03.0” and sends it
+   through the hierarchy.
+5. The TLP is received by this SCSI storage controller on Bus 0:Device:3 and
+   sees that it is a configuration space TLP. It now knows to respond with a
+   configuration space response TLP that contains the contents of the value at
+   offset 0x0.
+
+** Response **
+
+image::../images/pcie-config-read-2.png[width=100%]
+
+1. The device responds with a special TLP containing the value at offset 0
+   (which we know is the Vendor ID). 
+2. That packet makes its way back to the Requester (which was the Root
+   Complex) and the interconnect informs the CPU to update the value of
+   register to the value of Vendor ID 
+
+==== Request packet of Config Read
 
 image::../images/ConfigReadType0-0.png[width=120%]
 
@@ -793,7 +1023,7 @@ is `0x00` which means it is going to Vendor ID register.
 space TLP. It now knows to respond with a configuration space response TLP that
 contains the contents of the value at offset 0x0.
 
-=== Respose of Config Read
+==== Response packet of Config Read
 
 The device responds with a special TLP containing the value at offset 0 (which
 we know is the Vendor ID). That packet makes its way back to the Requester
@@ -805,7 +1035,80 @@ image::../images/ConfigReadType0-2.png[width=120%]
 
 image::../images/ConfigReadType0-3.png[width=120%]
 
-== Data Transfer in PCIe
+==== Practical: Access Configuration Space Manually
+
+* Launch QEMU
+
+```bash
+./build/qemu-8.1.0/x86_64-softmmu/qemu-system-x86_64 \
+  -M q35,accel=tcg \
+  -m 2G \
+  -drive if=pflash,format=raw,readonly,file=/usr/share/OVMF/OVMF_CODE.fd \
+  -drive if=pflash,format=raw,file=/usr/share/OVMF/OVMF_VARS.fd \
+  -device nvme,serial=1234567890 \
+  -device nvme-ns,drive=drive0,nsid=1 \
+  -drive if=none,id=drive0,format=raw,file=/var/lib/libvirt/images/disk.qcow2
+```
+
+* ECAM address range:
+
+```bash
+root@playground-arm64:~# cat /proc/iomem |grep ECAM
+4010000000-401fffffff : PCI ECAM
+root@playground-arm64:~#
+```
+
+* Minimal-pci-nic card:
+
+```bash
+root@playground-arm64:~#lspci
+00:05.0 Ethernet controller: Red Hat, Inc. Device 10f1 (rev 01)
+```
+
+* Calculate ECAM address:
+
+```bash
+hex(0x4010000000 + ((0 << 20) | (5 << 15) | (0 << 12)))
+= 0x4010028000
+```
+
+* Read ECAM address:
+
+```bash
+playground-arm64:~# devmem2 0x4010028000
+/dev/mem opened.
+Memory mapped at address 0xffffa9309000.
+Read at address  0x4010028000 (0xffffa9309000): 0x10F11AF4  <<<< Device ID and Vendor ID
+root@playground-arm64:~# 
+```
+
+* Dump minimal-pcie-nic card configuration space:
+
+```bash
+root@playground-arm64:~# lspci -s 00:05.0 -x
+00:05.0 Ethernet controller: Red Hat, Inc. Device 10f1 (rev 01)
+00: f4 1a f1 10 06 04 10 00 01 00 00 02 00 00 00 00
+10: 00 30 04 10 00 40 04 10 00 00 00 00 00 00 00 00
+20: 00 00 00 00 00 00 00 00 00 00 00 00 f4 1a 00 11
+30: 00 00 00 00 98 00 00 00 00 00 00 00 00 00 00 00
+root@playground-arm64:~#
+```
+
+=== PCIe Memory Space
+
+* MEM Space is mainly for data transfer or accessing the local memory/ internal
+registers of PCIe Endpoint.
+* Two ways to map and access the MEM space
+** MMIO: Mapped during the enumeration by reading the BAR
+   registers.MMIO can be used to map an address space of a device to perform
+   memory transfers.
+** DMA: Unlike MMIO, DMA is initiated by the device.
+
+image::../images/pcie-mem-mmio.png[width=50%]
+
+image::../images/pcie-mem-dma.png[width=50%]
+
+=== Data Transfer in PCIe
 
 `Configuration space` serves as the primary mechanism for device communication
 via BDF during the enumeration process(LTSSM). This simplified transfer mode is
@@ -825,6 +1128,8 @@ capabilities or implementation.
 We have already used this term in above sections. Lets dig more deeper and
 understand what is BAR and how Rootcomplex is using it to map the memory space
 of a PCIe device to the memory space of the CPU(MMIO).
+
+image::../images/pcie-bar.png[width=100%]
 
 `Base Address Register (BAR)` is a 32-bit or 64-bit register that is used to
 map the memory space of a PCIe device to the memory space of the CPU.
@@ -952,6 +1257,263 @@ root@imx6dl:~#
 00:00.0 PCI bridge: Synopsys :Region 0: Memory at 01000000 (32-bit, non-prefetchable) [virtual] [size=1M]
 01:00.0 Network controller: Qualcomm Atheros AR9285 :Region 0: Memory at 01100000 (64-bit, non-prefetchable) [virtual] [size=64K]
 ```
+
+=== Practical Example to accessing Endpoint Memory
+
+* **Step 1** : SoC Memory Map Reserves a PCIe
+    ** Setup PCIe address and CPU address MEM space mapping in device tree. 
+    ** PCIe MEM Pool: CPU physical addresses 0x0100_0000 → 0x010F_FFFF are
+       forwarded to PCIe bus addresses 0x2000_0000 → 0x200F_FFFF
+* **Step 2** : ATU Outbound Region is Programmed
+    ** Lower Base:   0x0100_0000   (CPU physical start)
+    ** Upper Base:   0x0000_0000
+    ** Limit:        0x010F_FFFF   (CPU physical end)
+    ** Lower Target: 0x2000_0000   (PCIe bus address)
+    ** Upper Target: 0x0000_0000
+    ** Type:         MEM (Memory TLP)
+    ** Enable:       1
+* **Step 3** : PCI Enumeration: BAR is Sized and Assigned
+    ** Now the kernel runs enumeration and computes the BAR requested size as:
+    ** Kernel writes:  BAR0 : 0xFFFF_FFFF
+    ** Kernel reads:   BAR0 : 0xFFF0_0000   (EP returns size mask)
+    ** Decoded size = ~0xFFF0_0000 + 1 = 0x0010_0000 = 1 MB
+    ** The kernel picks 0x2000_0000 from its PCIe bus resource pool (which
+       matches the iATU outbound target) and writes it into the BAR0
+    ** Now the endpoint knows: "Memory TLPs targeting 0x2000_0000 to
+       0x200F_FFFF are mine.
+* **Step 4** : Kernel Resource Registration
+    ** The kernel resource tree tracks the CPU physical address 0x0100_0000 ,
+       not the PCIe bus address.
+* **Step 5** : Driver Maps the BAR
+```c
+void __iomem *bar0 = pci_iomap(pdev, 0, 0);
+/* Internally: ioremap(0x0100_0000, 0x100000) */
+/* bar0 is now a virtual address mapping CPU physical 0x0100_0000 */
+```
+* **Step 6** : CPU Write Triggers TLP Generation
+```c
+writel(0xDEADBEEF, bar0 + 0x10);
+```
+
+=== PCIe MEM write
+
+image::../images/pcie-mem-write.png[]
+
+=== NIC Card Example: MMIO access through a BAR
+
+The Big Picture:
+You have an SoC on the left, and a minimal PCIe NIC card on the right. The
+goal is the CPU on the SoC needs to talk to that NIC card to configure it,
+send/receive data through it, and get interrupts from it. Everything flows
+through the Root Complex and its iATU (Address Translation Unit).
+
+image::../images/pcie-nic-card-example.png[]
+
+The NIC card (rightmost) exposes three things:
+
+* A 4KB config space for the device at BDF 01:00.0
+* A 4KB MEM region (BAR0) — the register file
+* A 4KB MSI-X table (BAR1)
+* ATU regions
+    ** Region 2 (MEM type): CPU writes to 0x10043000-0x10043fff→ PCIe
+       MEM space at 0x50000000. This covers BAR0 (registers) and BAR1
+       (MSI-X) on the device.
+    ** Region 3 (MEM type): CPU writes to 0x10044000-0x10044fff→ PCIe
+       MEM space at 0x5001000. This covers BAR0 (registers) and BAR1
+       (MSI-X) on the device.
+
+Kernel driver does:
+
+* This covers BAR0 (registers) and BAR1 (MSI-X) on the device.
+* `pci_request_region(0) + ioremap(0) -> map BAR0 0x10043000 into`
+  kernel virtual address space.
+* `pci_request_region(1) + ioremap(1) -> map BAR1 0x10044000 into`
+  kernel virtual address space.
+* Driver then writes TX/RX descriptor info through those virtual addresses
+  — these descriptors carry DMA-mapped addresses pointing to actual DDR buffers
+  for data transfer
+
+image::../images/pcie-nic-card-bar-access1.png[width=50%]
+
+image::../images/pcie-nic-card-bar-access2.png[width=50%]
+
+== PCIe Interrupts
+
+=== PCIe Legacy Interrupts
+
+* PCIe does not use physical interrupt wires like traditional PCI (no INTA#,
+  INTB#, INTC#, INTD# pins on the bus).
+* INTx interrupts are implemented using message-based signaling (Message TLPs):
+    ** Device sends Assert_INTx
+    ** Device later sends Deassert_INTx
+* The Root Complex translates these messages into CPU-visible interrupts (IRQ
+  lines).
+* INTx interrupts are:
+    ** Shared among multiple devices
+* Due to limitations, INTx is largely replaced by:
+    ** MSI (Message Signaled Interrupts)
+    ** MSI-X (extended MSI with multiple vectors per device)
+
+image::../images/pcie-legacy.png[width=100%]
+
+=== PCIe MSI (Message Signaled Interrupts)
+
+* No physical interrupt pins are used
+* Devices generate interrupts by writing a specific data value to a pre-defined
+memory address.
+* Each device can have multiple MSI vectors (up to 32 for MSI, 2048 for MSI-X).
+
+image::../images/pcie-msi-1.png[width=50%]
+
+image::../images/pcie-msi-2.png[width=50%]
+
+image::../images/pcie-msi-3.png[width=80%]
+
+==== How msi setup and initialized(imx6 msi example)
+
+image::../images/pcie-msi-imx6.png[width=120%]
+
+==== QEMU pcie msi example
+
+* Setup msi on qemu device side.
+
+```c
+    #msi_init()
+msi_init(pdev,
+                 0,      /* offset in config space */
+                 4,      /* number of MSI vectors */
+                 false,  /* 32-bit address */
+                 true,   /* per-vector masking enabled */
+                 errp)
+```
+
+* Device write to that address.
+* Root Complex generate interrupt to CPU.
+* Host driver setup.
+
+* Setup msi on host pcie driver.
+
+```c
+# Allocate IRQs
+mdev->nvec_irq = pci_alloc_irq_vectors(pdev,
+                                1,
+                                MAX_MSI_VECTORS,
+                                PCI_IRQ_MSI);
+
+# Request IRQs
+
+for (i = 0; i < mdev->nvec_irq; i++) {
+        int irq = pci_irq_vector(pdev, i);
+
+        ret = devm_request_irq(&pdev->dev,
+                               irq,
+                               minimal_irq_handler,
+                               0,
+                               DRV_NAME,
+                               mdev);
+        if (ret) {
+            dev_err(&pdev->dev, "IRQ %d request failed\n", i);
+            goto err_irq;
+        }
+    }
+```
+
+* When device wants to send an interrupt it will send a MSI TLP to the Root Complex.
+* Root Complex will translate this MSI TLP into an IRQ to CPU.
+
+* lspci output 
+
+```
+00:05.0 Ethernet controller: Red Hat, Inc. Device 10f1 (rev 01)
+        Subsystem: Red Hat, Inc. Device 1100
+        Control: I/O- Mem+ BusMaster+
+        Interrupt: pin ? routed to IRQ 38
+        Region 0: Memory at 10043000 (32-bit, non-prefetchable) [size=4K]
+        Region 1: Memory at 10044000 (32-bit, non-prefetchable) [size=4K]
+        Capabilities: [40] MSI: Enable+ Count=4/4 Maskable+ 64bit-
+                Address: 08020040  Data: 0060
+                Masking: 00000000  Pending: 00000000
+        Kernel driver in use: minimal_pcie_nic_drv
+        Kernel modules: minimal_pcie_nic_drv
+```
+
+* [40]: Offset 0x40 in PCI configuration space where the MSI capability
+  structure begins.
+* Enable+: MSI is active, replacing legacy INTx interrupts.
+* Count=4/4: The device requested 4 vectors, and the OS granted all 4.
+* Maskable-: Per-vector masking is not supported by this hardware.
+* 64bit-: The device uses 32-bit MSI addressing.
+* Address/Data: The memory-write parameters (Address 08020040, Data 0060)
+  used to trigger the interrupt.
+* All vectors (if multiple allowed) share the same MSI address.
+* Address: 0x08020040   (same for all vectors)
+* Data: 0x60, 0x61, 0x62, 0x63  (different for each vector)
+
+* cat /proc/interrupts
+
+```
+root@playground-arm64:~# devmem2 0x10043000 w 0x00000000
+# cat /proc/interrupts (vector 0 interrupt is generated on CPU0)
+        CPU0  CPU1  CPU2  CPU3 
+ 38:      1     0     0     0  GICv2m-PCI-MSI-0000:00:05.0   1 Edge      minimal_pcie_nic_drv
+ 39:      0     0     0     0  GICv2m-PCI-MSI-0000:00:05.0   0 Edge      minimal_pcie_nic_drv
+ 40:      0     0     0     0  GICv2m-PCI-MSI-0000:00:05.0   2 Edge      minimal_pcie_nic_drv
+ 41:      0     0     0     0  GICv2m-PCI-MSI-0000:00:05.0   3 Edge      minimal_pcie_nic_drv
+
+root@playground-arm64:~# devmem2 0x10043000 w 0x00000001
+# cat /proc/interrupts (vector 1 interrupt is generated on CPU0)
+        CPU0  CPU1  CPU2  CPU3 
+ 38:      0     0     0     0  GICv2m-PCI-MSI-0000:00:05.0   0 Edge      minimal_pcie_nic_drv
+ 39:      1     0     0     0  GICv2m-PCI-MSI-0000:00:05.0   1 Edge      minimal_pcie_nic_drv
+ 40:      0     0     0     0  GICv2m-PCI-MSI-0000:00:05.0   2 Edge      minimal_pcie_nic_drv
+ 41:      0     0     0     0  GICv2m-PCI-MSI-0000:00:05.0   3 Edge      minimal_pcie_nic_drv
+```
+=== PCIe MSI-X
+
+* Separate BAR is used instead of PCI configuration space.
+* MSI-X is MSI taken to its logical conclusion: up to 2048 fully independent
+  vectors, each with its own doorbell address and data word, stored in a table
+  inside BAR space rather than config space.
+
+image::../images/pcie-msix-1.png[width=100%]
+
+image::../images/pcie-msix-2.png[width=50%]
+
+* Example : generating MSI-X interrupt on qemu
+
+```
+# Vector 0
+# Write BAR0 to generate MSI interrupt
+root@playground-arm64:~# devmem2 0x10043000 w 0x00000000
+
+# dmesg logs
+[  470.624926] minimal_pcie_nic_drv: MSI-X interrupt received
+[  470.625269] IRQ 38 fired
+
+# cat /proc/interrupts (vector 0 interrupt is generated on CPU0)
+ 38:    1     0     0     0  GICv2m-PCI-MSIX-0000:00:05.0   0 Edge      minimal_pcie_nic_drv
+ 39:    0     0     0     0  GICv2m-PCI-MSIX-0000:00:05.0   1 Edge      minimal_pcie_nic_drv
+ 40:    0     0     0     0  GICv2m-PCI-MSIX-0000:00:05.0   2 Edge      minimal_pcie_nic_drv
+ 41:    0     0     0     0  GICv2m-PCI-MSIX-0000:00:05.0   3 Edge      minimal_pcie_nic_drv
+
+# Vector 1
+# Write BAR0 to generate MSI interrupt
+root@playground-arm64:~# devmem2 0x10043000 w 0x00000001
+
+# dmesg logs
+[  179.056541] minimal_pcie_nic_drv: MSI-X interrupt received
+[  179.056870] IRQ 39 fired
+
+# cat /proc/interrupts (vector 1 interrupt is generated on CPU0)
+ 38:    0     0     0     0  GICv2m-PCI-MSIX-0000:00:05.0   0 Edge      minimal_pcie_nic_drv
+ 39:    1     0     0     0  GICv2m-PCI-MSIX-0000:00:05.0   1 Edge      minimal_pcie_nic_drv
+ 40:    0     0     0     0  GICv2m-PCI-MSIX-0000:00:05.0   2 Edge      minimal_pcie_nic_drv
+ 41:    0     0     0     0  GICv2m-PCI-MSIX-0000:00:05.0   3 Edge      minimal_pcie_nic_drv
+```
+
+== PCIe Device tree
+
+image::../images/pcie-device-tree.png[width=100%]
 
 == PCIe IO Lines
 
